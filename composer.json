@@ -1,0 +1,45 @@
+{
+    "name": "webgeniusmkt/auth-bridge-laravel",
+    "description": "Bridge package for Laravel applications to authenticate against the centralized Auth API service.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "laravel",
+        "authentication",
+        "oauth2",
+        "sso",
+        "auth-bridge"
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/auth": "^10.0|^11.0",
+        "illuminate/contracts": "^10.0|^11.0",
+        "illuminate/http": "^10.0|^11.0",
+        "illuminate/support": "^10.0|^11.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.0|^9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "AuthBridge\\Laravel\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "AuthBridge\\Laravel\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "AuthBridge\\Laravel\\AuthBridgeServiceProvider"
+            ],
+            "aliases": {
+                "AuthBridge": "AuthBridge\\Laravel\\Facades\\AuthBridge"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
