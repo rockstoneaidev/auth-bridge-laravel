@@ -4,8 +4,8 @@
 
 ## Requirements
 
-- PHP 8.2+
-- Laravel 10.x or 11.x
+- PHP 8.4+
+- Laravel 12.x
 - Central Auth API v1 (Passport-based)
 
 ## Installation
