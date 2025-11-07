@@ -122,8 +122,12 @@ AUTH_BRIDGE_CACHE_TTL=30
 AUTH_BRIDGE_CACHE_STORE=
 AUTH_BRIDGE_ACCOUNT_HEADER=X-Account-ID
 AUTH_BRIDGE_APP_HEADER=X-App-Key
+AUTH_BRIDGE_BOOTSTRAP_PATH=/internal/apps/bootstrap
+AUTH_BRIDGE_DEFAULT_REDIRECT_SUFFIX=/oauth/callback
 # AUTH_BRIDGE_INPUT_KEY=api_token
 # AUTH_BRIDGE_STORAGE_KEY=api_token
+# AUTH_BRIDGE_CHECK_TOKEN=
+# APP_KEY_SLUG=myapp
 # AUTH_BRIDGE_EXTERNAL_ID_COLUMN=external_user_id
 # AUTH_BRIDGE_ACCOUNT_ID_COLUMN=external_account_id
 # AUTH_BRIDGE_ACCOUNT_IDS_COLUMN=external_accounts
@@ -135,64 +139,67 @@ AUTH_BRIDGE_APP_HEADER=X-App-Key
 # AUTH_BRIDGE_LAST_SEEN_COLUMN=last_seen_at
 ```
 
-## Onboarding a New Laravel App (Authorization Code flow)
+## Onboarding a New Laravel App
 
-Use this checklist whenever you clone the base app template and want it to authenticate through the Auth API:
+Starting with this release, the package ships an opinionated onboarding flow that turns a fresh Laravel app into an Auth Bridge-ready app with a single Artisan command.
 
-1. **Create an OAuth client in auth-api**  
-   ```bash
-   ./vendor/bin/sail artisan passport:client --name="My Web App (Auth Code)"
-   ```  
-   Supply the production + local callback URL (for example `https://myapp.example.com/oauth/callback`). Keep the `client_id` and `client_secret`.
+### Quick start: `auth-bridge:onboard`
 
-2. **Link the client to the application row**  
-   Update `applications` (or use the API/Seeder) so `key = "myapp"` and `oauth_client_id = <client_id from step 1>`. Enable the app for each account that should access it via:  
-   `POST /api/v1/accounts/{account_uuid}/apps/{app_uuid}`.
+```bash
+php artisan auth-bridge:onboard \
+  --app-key=docs \
+  --app-name="Docs" \
+  --redirect=${APP_URL:-http://localhost:8000}/oauth/callback \
+  --bootstrap-token=${AUTH_API_BOOTSTRAP_TOKEN} \
+  --accounts=1234-uuid-here
+```
 
-3. **Install the bridge in the Laravel app**  
-   Run `composer require webgeniusmkt/auth-bridge-laravel`, publish config + migrations, and run `php artisan migrate` (as described earlier in this README).
+What the command does:
 
-4. **Configure the guard**  
-   Set `auth.guards.api.driver = auth-bridge` and point it at the `users` provider. Optionally tweak cache TTL/store per environment.
+1. Publishes the bridge config/migrations (idempotent) and runs `php artisan migrate`.
+2. Calls the Auth API internal bootstrap endpoint to create/link the OAuth client + application row (when `--bootstrap-token` is provided).
+3. Writes/updates the required `.env` keys (`APP_KEY_SLUG`, `AUTH_BRIDGE_*`, `OAUTH_CLIENT_*`).
+4. Scaffolds a minimal OAuth controller, routes, and middleware for browser flows.
+5. Executes `auth-bridge:check` to hit `/health` and, if a token is supplied, `/user`.
 
-5. **Provide OAuth + bridge environment variables**  
-   ```
-   AUTH_BRIDGE_BASE_URL=https://auth.example.com/api/v1
-   AUTH_BRIDGE_ACCOUNT_HEADER=X-Account-ID
-   AUTH_BRIDGE_APP_HEADER=X-App-Key
-   AUTH_BRIDGE_INPUT_KEY=api_token
-   AUTH_BRIDGE_STORAGE_KEY=api_token
+`--dry` prints the plan without touching disk or calling remote services. Supply `--client-id/--client-secret` to skip the Auth API bootstrap step.
 
-   OAUTH_CLIENT_ID=<client_id from auth-api>
-   OAUTH_CLIENT_SECRET=<client_secret from auth-api>
-   APP_KEY_SLUG=myapp              # must match applications.key in auth-api
-   APP_URL=https://myapp.example.com
-   ```
+### Common flows
 
-6. **Implement the Authorization Code flow in your app**  
-   - `/login` route: generate a random `state`, store it in the session, and redirect the browser to `${AUTH_BRIDGE_BASE_URL}/oauth/authorize` with the standard parameters (`client_id`, `redirect_uri`, `response_type=code`, `scope`, `state`).  
-   - `/oauth/callback`: validate the `state`, exchange the `code` for tokens at `${AUTH_BRIDGE_BASE_URL}/oauth/token` (`grant_type=authorization_code`). Store the `access_token` (and optional `refresh_token`) in the session and drop the access token into a cookie or request input named `api_token` so the bridge guard can read it (`AUTH_BRIDGE_INPUT_KEY`/`STORAGE_KEY`).  
-   - `/logout`: optionally call `${AUTH_BRIDGE_BASE_URL}/logout` with the stored access token, then clear the session and `api_token` cookie.
+| Scenario | Command |
+| --- | --- |
+| Local dev bootstrap (create client + scaffold) | `php artisan auth-bridge:onboard --app-key=docs --app-name="Docs" --auth-base=https://auth.example.com/api/v1 --bootstrap-token=$ADMIN_TOKEN --accounts=123` |
+| CI/CD first deploy | `php artisan auth-bridge:onboard --app-key=docs --app-name="Docs" --redirect=https://docs.example.com/oauth/callback --bootstrap-token=$AUTH_API_BOOTSTRAP_TOKEN --accounts=123` |
+| Already have OAuth client | `php artisan auth-bridge:onboard --app-key=docs --client-id=abc --client-secret=shhh --redirect=https://docs.example.com/oauth/callback` |
+| Preview only | `php artisan auth-bridge:onboard --app-key=docs --dry` |
 
-7. **Forward account/app headers automatically**  
-   Create a lightweight middleware that copies the current account and app key into request headers before `auth:api` runs:  
-   - Read the active account UUID from session/query (`session('x_account_id')`, for example).  
-   - Set `X-Account-ID`/`X-App-Key` (or the overridden header names) on the request so the bridge forwards them to the Auth API `/user` call.  
-   Apply this middleware before `auth:api` in your protected route groups.
+### Supporting commands
 
-8. **Protect routes with the bridge guard**  
-   ```php
-   Route::middleware(['inject-auth-ctx', 'auth:api'])->group(function () {
-       Route::get('/', fn () => view('welcome'));
-       Route::get('/me', fn () => request()->user());
-   });
-   ```
+| Command | Purpose |
+| --- | --- |
+| `auth-bridge:install` | Publish config + migrations and run `migrate`. Safe to re-run. |
+| `auth-bridge:bootstrap-app` | Direct call to `AUTH_BRIDGE_BOOTSTRAP_PATH` to create/link the OAuth client; prints the returned client id/secret. |
+| `auth-bridge:scaffold` | Generates the OAuth controller, middleware, and route stubs. Pass `--force` to overwrite. |
+| `auth-bridge:check` | Hits `/health` and (optionally) `/user` using `--token` or `AUTH_BRIDGE_CHECK_TOKEN`. |
 
-9. **(Optional) Refresh tokens**  
-   When `now() > session('token_expires_at')->subSeconds(60)`, call `/oauth/token` with `grant_type=refresh_token`, update the stored tokens, and reissue the `api_token` cookie. This keeps long-lived browser sessions seamless.
+### Manual fallback / customization
 
-10. **Server-to-server API keys**  
-    Only use Auth API "Account API Keys" when your app itself (or a backend worker) needs to call Auth API endpoints without a user session. They are created with `POST /api/v1/accounts/{account}/api-keys` and sent as `X-API-Key`. They are not required for the standard user login flow.
+Prefer the commands, but if you cannot hit the internal bootstrap endpoint from your environment, complete these steps manually:
+
+1. Create an OAuth client in the Auth API (Passport) with your callbacks.
+2. Link it to an `applications` row (`key = APP_KEY_SLUG`) and enable the relevant accounts.
+3. Install the bridge (`composer require`, publish config/migrations, migrate) and configure the `auth-bridge` guard.
+4. Set the `.env` keys (`AUTH_BRIDGE_*`, `OAUTH_CLIENT_*`, `APP_KEY_SLUG`, `APP_URL`).
+5. Implement/adjust the Authorization Code controller, callback, and logout actions (the scaffolded files are a good starting point). Store the issued token where `AUTH_BRIDGE_INPUT_KEY`/`AUTH_BRIDGE_STORAGE_KEY` expect it (`api_token` by default).
+6. Ensure the `inject-auth-ctx` middleware (or equivalent) attaches the current account/app context headers before `auth:api` (or `auth:auth-bridge`) runs.
+7. (Optional) add refresh token handling and create Account API keys for server-to-server use cases.
+
+Guardrails/best practices:
+
+- Protect the Auth API `/internal/apps/bootstrap` endpoint behind admin roles + network allow lists.
+- Avoid echoing client secrets in CI logs; the command only writes them to `.env` unless you print Artisan output.
+- Run with `--dry` in pull requests to show intent without mutating files.
+- Because scaffolding is additive and idempotent, it is safe to re-run after editing routes/controller, but keep customizations separate or use `--force` selectively.
 
 ## Why a Local `users` Table?
 
