@@ -1,0 +1,12 @@
+// --- AuthBridge scaffolding ---
+\Illuminate\Support\Facades\Route::middleware('web')->group(function () {
+    \Illuminate\Support\Facades\Route::get('/', fn () => \Inertia\Inertia::render('Home'))->name('home');
+    \Illuminate\Support\Facades\Route::get('/login', [\App\Http\Controllers\Auth\OAuthController::class, 'redirect'])->name('login');
+    \Illuminate\Support\Facades\Route::get('/oauth/callback', [\App\Http\Controllers\Auth\OAuthController::class, 'callback'])->name('oauth.callback');
+    \Illuminate\Support\Facades\Route::post('/logout', [\App\Http\Controllers\Auth\OAuthController::class, 'logout'])->name('logout');
+});
+
+\Illuminate\Support\Facades\Route::middleware(['inject-auth-ctx', 'auth:auth-bridge'])->group(function () {
+    \Illuminate\Support\Facades\Route::get('/me', fn () => request()->user());
+});
+// --- /AuthBridge scaffolding ---

@@ -159,7 +159,7 @@ What the command does:
 1. Publishes the bridge config/migrations (idempotent) and runs `php artisan migrate`.
 2. Calls the Auth API internal bootstrap endpoint to create/link the OAuth client + application row (when `--bootstrap-token` is provided).
 3. Writes/updates the required `.env` keys (`APP_KEY_SLUG`, `AUTH_BRIDGE_*`, `OAUTH_CLIENT_*`).
-4. Scaffolds a minimal OAuth controller, routes, and middleware for browser flows.
+4. Scaffolds the OAuth controller, middleware, routes, and the matching Inertia/Svelte pages/components that power the default login/logout experience.
 5. Executes `auth-bridge:check` to hit `/health` and, if a token is supplied, `/user`.
 
 `--dry` prints the plan without touching disk or calling remote services. Supply `--client-id/--client-secret` to skip the Auth API bootstrap step.
@@ -179,7 +179,7 @@ What the command does:
 | --- | --- |
 | `auth-bridge:install` | Publish config + migrations and run `migrate`. Safe to re-run. |
 | `auth-bridge:bootstrap-app` | Direct call to `AUTH_BRIDGE_BOOTSTRAP_PATH` to create/link the OAuth client; prints the returned client id/secret. |
-| `auth-bridge:scaffold` | Generates the OAuth controller, middleware, and route stubs. Pass `--force` to overwrite. |
+| `auth-bridge:scaffold` | Generates/updates the OAuth controller, middleware, routes, and Inertia/Svelte UI. Pass `--force` to overwrite local edits. |
 | `auth-bridge:check` | Hits `/health` and (optionally) `/user` using `--token` or `AUTH_BRIDGE_CHECK_TOKEN`. |
 
 ### Manual fallback / customization
@@ -190,7 +190,7 @@ Prefer the commands, but if you cannot hit the internal bootstrap endpoint from 
 2. Link it to an `applications` row (`key = APP_KEY_SLUG`) and enable the relevant accounts.
 3. Install the bridge (`composer require`, publish config/migrations, migrate) and configure the `auth-bridge` guard.
 4. Set the `.env` keys (`AUTH_BRIDGE_*`, `OAUTH_CLIENT_*`, `APP_KEY_SLUG`, `APP_URL`).
-5. Implement/adjust the Authorization Code controller, callback, and logout actions (the scaffolded files are a good starting point). Store the issued token where `AUTH_BRIDGE_INPUT_KEY`/`AUTH_BRIDGE_STORAGE_KEY` expect it (`api_token` by default).
+5. Implement/adjust the Authorization Code controller, callback, logout actions, and Inertia pages if you decide to skip the scaffolding step. The package stubs handle this out of the box and can be re-run later to pick up updates. Store the issued token where `AUTH_BRIDGE_INPUT_KEY`/`AUTH_BRIDGE_STORAGE_KEY` expect it (`api_token` by default).
 6. Ensure the `inject-auth-ctx` middleware (or equivalent) attaches the current account/app context headers before `auth:api` (or `auth:auth-bridge`) runs.
 7. (Optional) add refresh token handling and create Account API keys for server-to-server use cases.
 

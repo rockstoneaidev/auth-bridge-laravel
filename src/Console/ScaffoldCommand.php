@@ -12,74 +12,61 @@ class ScaffoldCommand extends Command
 {
     protected $signature = 'auth-bridge:scaffold {--force : Overwrite existing scaffolding files}';
 
-    protected $description = 'Add minimal OAuth controller, routes, and middleware for the Auth Bridge';
+    protected $description = 'Add Auth Bridge controllers, middleware, routes, and frontend scaffolding';
+
+    private const PLACEHOLDER_TOKEN = 'AUTH_BRIDGE_PLACEHOLDER';
+
+    private Filesystem $filesystem;
 
     public function handle(Filesystem $filesystem): int
     {
-        $this->scaffoldController($filesystem);
-        $this->scaffoldMiddleware($filesystem);
-        $this->scaffoldRoutes($filesystem);
+        $this->filesystem = $filesystem;
+
+        $this->scaffoldBackend();
+        $this->scaffoldFrontend();
 
         $this->info('Scaffolding complete.');
 
         return self::SUCCESS;
     }
 
-    private function scaffoldController(Filesystem $filesystem): void
+    private function scaffoldBackend(): void
     {
-        $path = app_path('Http/Controllers/Auth/OAuthController.php');
+        $this->publishFileFromStub(
+            'app/Http/Controllers/Auth/OAuthController.php',
+            app_path('Http/Controllers/Auth/OAuthController.php')
+        );
 
-        if ($filesystem->exists($path) && ! $this->option('force')) {
-            $this->line('OAuthController already exists. Use --force to overwrite.');
-            return;
-        }
+        $this->publishFileFromStub(
+            'app/Http/Middleware/InjectAuthBridgeContext.php',
+            app_path('Http/Middleware/InjectAuthBridgeContext.php')
+        );
 
-        $filesystem->ensureDirectoryExists(dirname($path));
-        $filesystem->put($path, $this->controllerStub());
-        $this->info('Created OAuthController.');
+        $this->registerMiddlewareAlias();
+        $this->appendRoutes();
     }
 
-    private function scaffoldRoutes(Filesystem $filesystem): void
+    private function scaffoldFrontend(): void
     {
-        $path = base_path('routes/web.php');
+        $this->publishFileFromStub('resources/views/app.blade.php', resource_path('views/app.blade.php'));
+        $this->publishFileFromStub('resources/css/app.css', resource_path('css/app.css'));
+        $this->publishFileFromStub('resources/js/app.js', resource_path('js/app.js'));
 
-        if (! $filesystem->exists($path)) {
-            $filesystem->put($path, "<?php\n\n");
-        }
-
-        $contents = $filesystem->get($path);
-
-        if (Str::contains($contents, 'AuthBridge scaffolding')) {
-            $this->line('Routes already contain Auth Bridge scaffolding.');
-            return;
-        }
-
-        $filesystem->append($path, PHP_EOL . $this->routesStub());
-        $this->info('Appended routes to routes/web.php.');
+        $this->publishDirectoryFromStub('resources/js/components', resource_path('js/components'));
+        $this->publishDirectoryFromStub('resources/js/lib', resource_path('js/lib'));
+        $this->publishDirectoryFromStub('resources/js/Layouts', resource_path('js/Layouts'));
+        $this->publishDirectoryFromStub('resources/js/Pages', resource_path('js/Pages'));
     }
 
-    private function scaffoldMiddleware(Filesystem $filesystem): void
-    {
-        $path = app_path('Http/Middleware/InjectAuthBridgeContext.php');
-
-        if (! $filesystem->exists($path) || $this->option('force')) {
-            $filesystem->ensureDirectoryExists(dirname($path));
-            $filesystem->put($path, $this->middlewareStub());
-            $this->info('Created InjectAuthBridgeContext middleware.');
-        }
-
-        $this->registerMiddlewareAlias($filesystem);
-    }
-
-    private function registerMiddlewareAlias(Filesystem $filesystem): void
+    private function registerMiddlewareAlias(): void
     {
         $kernel = app_path('Http/Kernel.php');
 
-        if (! $filesystem->exists($kernel)) {
+        if (! $this->filesystem->exists($kernel)) {
             return;
         }
 
-        $contents = $filesystem->get($kernel);
+        $contents = $this->filesystem->get($kernel);
 
         if (Str::contains($contents, 'inject-auth-ctx')) {
             return;
@@ -106,167 +93,89 @@ class ScaffoldCommand extends Command
             return;
         }
 
-        $filesystem->put($kernel, $updated);
+        $this->filesystem->put($kernel, $updated);
         $this->info('Registered route middleware alias: inject-auth-ctx.');
     }
-
-    private function controllerStub(): string
+    private function appendRoutes(): void
     {
-        return <<<'PHP'
-<?php
+        $path = base_path('routes/web.php');
 
-namespace App\Http\Controllers\Auth;
-
-use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
-use Symfony\Component\HttpFoundation\Cookie;
-
-class OAuthController extends Controller
-{
-    private function base(): string
-    {
-        return rtrim((string) config('auth-bridge.base_url'), '/');
-    }
-
-    private function clientId(): string
-    {
-        return (string) env('OAUTH_CLIENT_ID');
-    }
-
-    private function clientSecret(): string
-    {
-        return (string) env('OAUTH_CLIENT_SECRET');
-    }
-
-    private function redirectUri(): string
-    {
-        return route('oauth.callback', absolute: true);
-    }
-
-    private function appKey(): string
-    {
-        return (string) env('APP_KEY_SLUG', 'myapp');
-    }
-
-    private function storageKey(): string
-    {
-        return (string) config('auth-bridge.guard.storage_key', 'api_token');
-    }
-
-    public function redirect(Request $request)
-    {
-        $state = Str::random(32);
-        $request->session()->put('oauth_state', $state);
-
-        $url = $this->base() . '/oauth/authorize?' . http_build_query([
-            'client_id' => $this->clientId(),
-            'redirect_uri' => $this->redirectUri(),
-            'response_type' => 'code',
-            'scope' => '',
-            'state' => $state,
-        ]);
-
-        return redirect()->away($url);
-    }
-
-    public function callback(Request $request)
-    {
-        $state = $request->session()->pull('oauth_state');
-        abort_unless($state && $state === $request->query('state'), 400, 'Invalid state');
-
-        $response = Http::asForm()->post($this->base() . '/oauth/token', [
-            'grant_type' => 'authorization_code',
-            'client_id' => $this->clientId(),
-            'client_secret' => $this->clientSecret(),
-            'redirect_uri' => $this->redirectUri(),
-            'code' => $request->query('code'),
-        ]);
-
-        abort_if($response->failed(), 401, 'Token exchange failed');
-
-        $json = $response->json();
-        $accessToken = $json['access_token'] ?? null;
-        $expiresIn = (int) ($json['expires_in'] ?? 1800);
-
-        $request->session()->put('access_token', $accessToken);
-        $request->session()->put('token_expires_at', now()->addSeconds($expiresIn));
-
-        $cookie = Cookie::create($this->storageKey())
-            ->withValue((string) $accessToken)
-            ->withHttpOnly(false)
-            ->withSecure(app()->environment('production'))
-            ->withSameSite('lax')
-            ->withExpires(time() + $expiresIn);
-
-        session(['x_app_key' => $this->appKey()]);
-
-        return redirect('/')->withCookie($cookie);
-    }
-
-    public function logout(Request $request)
-    {
-        if ($token = $request->session()->pull('access_token')) {
-            Http::withToken($token)->post($this->base() . '/logout');
+        if (! $this->filesystem->exists($path)) {
+            $this->filesystem->put($path, "<?php\n\n");
         }
 
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        $contents = $this->filesystem->get($path);
 
-        $cookie = Cookie::create($this->storageKey())
-            ->withValue('')
-            ->withExpires(time() - 3600);
-
-        return redirect('/login')->withCookie($cookie);
-    }
-}
-PHP;
-    }
-
-    private function routesStub(): string
-    {
-        return <<<'PHP'
-
-// --- AuthBridge scaffolding ---
-Route::get('/login', [\App\Http\Controllers\Auth\OAuthController::class, 'redirect'])->name('login');
-Route::get('/oauth/callback', [\App\Http\Controllers\Auth\OAuthController::class, 'callback'])->name('oauth.callback');
-Route::post('/logout', [\App\Http\Controllers\Auth\OAuthController::class, 'logout'])->name('logout');
-
-Route::middleware(['inject-auth-ctx', 'auth:auth-bridge'])->group(function () {
-    Route::get('/', fn () => view('welcome'));
-    Route::get('/me', fn () => request()->user());
-});
-// --- /AuthBridge scaffolding ---
-PHP;
-    }
-
-    private function middlewareStub(): string
-    {
-        return <<<'PHP'
-<?php
-
-namespace App\Http\Middleware;
-
-use Closure;
-use Illuminate\Http\Request;
-
-class InjectAuthBridgeContext
-{
-    public function handle(Request $request, Closure $next)
-    {
-        if ($account = session('x_account_id')) {
-            $request->headers->set(env('AUTH_BRIDGE_ACCOUNT_HEADER', 'X-Account-ID'), $account);
+        if (Str::contains($contents, 'AuthBridge scaffolding')) {
+            $this->line('Routes already contain Auth Bridge scaffolding.');
+            return;
         }
 
-        $request->headers->set(
-            env('AUTH_BRIDGE_APP_HEADER', 'X-App-Key'),
-            env('APP_KEY_SLUG', 'myapp')
-        );
-
-        return $next($request);
+        $snippet = $this->filesystem->get($this->stubPath('routes/web.stub'));
+        $this->filesystem->append($path, PHP_EOL . $snippet . PHP_EOL);
+        $this->info('Appended routes to routes/web.php.');
     }
-}
-PHP;
+
+    private function publishDirectoryFromStub(string $relativeSource, string $targetDir): void
+    {
+        $sourceDir = $this->stubPath($relativeSource);
+
+        if (! $this->filesystem->isDirectory($sourceDir)) {
+            return;
+        }
+
+        $files = $this->filesystem->allFiles($sourceDir);
+
+        foreach ($files as $file) {
+            $relativePath = Str::after($file->getPathname(), rtrim($sourceDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR);
+            $destination = $targetDir . DIRECTORY_SEPARATOR . $relativePath;
+            $this->publishRawFile($file->getPathname(), $destination);
+        }
+    }
+
+    private function publishFileFromStub(string $relativeSource, string $destination): void
+    {
+        $source = $this->stubPath($relativeSource);
+
+        if (! $this->filesystem->exists($source)) {
+            return;
+        }
+
+        $this->publishRawFile($source, $destination);
+    }
+
+    private function publishRawFile(string $source, string $destination): void
+    {
+        $force = (bool) $this->option('force');
+        $relative = Str::after($destination, base_path() . DIRECTORY_SEPARATOR);
+
+        if ($this->filesystem->exists($destination)) {
+            if (! $force && ! $this->allowsOverwrite($destination)) {
+                $this->line("Skipped {$relative} (already exists). Use --force to overwrite.");
+                return;
+            }
+        } else {
+            $this->filesystem->ensureDirectoryExists(dirname($destination));
+        }
+
+        $this->filesystem->put($destination, $this->filesystem->get($source));
+        $this->info("Published {$relative}");
+    }
+
+    private function allowsOverwrite(string $path): bool
+    {
+        $contents = $this->filesystem->get($path);
+
+        return $this->containsPlaceholder($contents);
+    }
+
+    private function containsPlaceholder(string $contents): bool
+    {
+        return str_contains($contents, self::PLACEHOLDER_TOKEN);
+    }
+
+    private function stubPath(string $relative): string
+    {
+        return __DIR__ . '/../../stubs/scaffold/' . ltrim($relative, '/');
     }
 }
