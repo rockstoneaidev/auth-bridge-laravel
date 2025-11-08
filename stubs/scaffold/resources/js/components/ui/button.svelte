@@ -6,7 +6,6 @@
   export let size = 'default';
   export let disabled = false;
   export let className = '';
-  export let $$restProps = {};
 
   const baseClasses = 'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ring-offset-background';
 
