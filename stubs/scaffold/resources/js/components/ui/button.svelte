@@ -1,11 +1,14 @@
 <script>
   import { cn } from '../../lib/utils';
+  import { createEventDispatcher } from 'svelte';
 
   export let type = 'button';
   export let variant = 'default';
   export let size = 'default';
   export let disabled = false;
   export let className = '';
+
+  const dispatch = createEventDispatcher();
 
   const baseClasses = 'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 ring-offset-background';
 
@@ -27,6 +30,7 @@
   class={cn(baseClasses, variants[variant] ?? variants.default, sizes[size] ?? sizes.default, className)}
   {disabled}
   {...$$restProps}
+  on:click={(event) => dispatch('click', event)}
 >
   <slot />
 </button>
