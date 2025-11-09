@@ -15,6 +15,11 @@ class OAuthController extends Controller
         return rtrim((string) config('auth-bridge.base_url'), '/');
     }
 
+    private function publicBase(): string
+    {
+        return rtrim((string) env('AUTH_BRIDGE_PUBLIC_URL', config('auth-bridge.base_url')), '/');
+    }
+
     private function clientId(): string
     {
         return (string) env('OAUTH_CLIENT_ID');
@@ -45,7 +50,7 @@ class OAuthController extends Controller
         $state = Str::random(32);
         $request->session()->put('oauth_state', $state);
 
-        $url = $this->base() . '/oauth/authorize?' . http_build_query([
+        $url = $this->publicBase() . '/oauth/authorize?' . http_build_query([
             'client_id' => $this->clientId(),
             'redirect_uri' => $this->redirectUri(),
             'response_type' => 'code',
