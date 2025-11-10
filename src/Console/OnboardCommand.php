@@ -102,6 +102,7 @@ class OnboardCommand extends Command
         }
 
         $this->info('✅ Onboarding completed.');
+        Log::info('OnboardCommand completed.');
 
         return self::SUCCESS;
     }
