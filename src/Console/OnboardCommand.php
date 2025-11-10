@@ -83,6 +83,7 @@ class OnboardCommand extends Command
         }
 
         Log::info('OnboardCommand: Preparing to update .env with Client ID: ' . ($clientId ?? 'null') . ' and Client Secret: ' . ($clientSecret ? 'provided' : 'null'));
+        Log::info('OnboardCommand: Received App ID option: ' . ($this->option('app-id') ?? 'null'));
 
         $this->updateEnv(array_filter([
             'AUTH_BRIDGE_BASE_URL' => $authBase,
@@ -155,6 +156,7 @@ class OnboardCommand extends Command
 
     private function updateEnv(array $keyValue): void
     {
+        Log::info('updateEnv: Data to be written to .env file:', $keyValue);
         $path = base_path('.env');
         Log::info('updateEnv: Attempting to write to .env file at: ' . $path);
         $env = file_exists($path) ? file_get_contents($path) : '';

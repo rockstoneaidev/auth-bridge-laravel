@@ -27,6 +27,7 @@ use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 class AuthBridgeServiceProvider extends ServiceProvider
