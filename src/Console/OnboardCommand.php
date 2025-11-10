@@ -167,7 +167,7 @@ class OnboardCommand extends Command
 
     private function fetchAppIdFromAuthApi(string $authBase, string $clientId, string $clientSecret, string $appKey): ?string
     {
-        $path = (string) config('auth-bridge.app_lookup_path', '/apps/lookup');
+        $path = (string) config('auth-bridge.app_lookup_path', '/apps');
         $url = rtrim($authBase, '/') . '/' . ltrim($path, '/');
         $this->info("Fetching App ID from Auth API… {$url}");
 
@@ -185,13 +185,21 @@ class OnboardCommand extends Command
                 $this->error('Auth API App ID lookup failed: ' . $response->body());
                 return null;
             }
+
+            // The response is an array of apps, get the first one
+            $apps = $response->json();
+            if (empty($apps) || !isset($apps[0]['id'])) {
+                $this->error('Auth API returned no matching app for the given app_key.');
+                return null;
+            }
+
+            return $apps[0]['id'];
+
         } catch (\Throwable $e) {
             Log::debug('Auth API App ID lookup request failed: ' . $e->getMessage());
             $this->error('Auth API App ID lookup request failed: ' . $e->getMessage());
             return null;
         }
-
-        return $response->json('id');
     }
 
     private function updateEnv(array $keyValue): void
