@@ -60,20 +60,18 @@ class AuthBridgeServiceProvider extends ServiceProvider
         $this->app->singleton(AuthBridgeContext::class, function (Container $app): AuthBridgeContext {
             return new AuthBridgeContext($app['request']);
         });
-
-        $this->registerCommands();
     }
 
     public function boot(): void
     {
+        if ($this->app->runningInConsole()) {
+            $this->commands(self::COMMANDS);
+        }
+
         $this->registerPublishing();
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
         $this->registerGuard();
         $this->registerMiddleware();
-
-        if ($this->app->runningInConsole()) {
-            $this->commands(self::COMMANDS);
-        }
     }
 
     protected function registerPublishing(): void
@@ -157,15 +155,5 @@ class AuthBridgeServiceProvider extends ServiceProvider
 
         $router->aliasMiddleware('auth-bridge.permission', EnsureAuthBridgePermission::class);
         $router->aliasMiddleware('auth-bridge.role', EnsureAuthBridgeRole::class);
-    }
-    private function registerCommands(): void
-    {
-        $this->app->singleton(OnboardCommand::class);
-        $this->app->singleton(BootstrapAppCommand::class);
-        $this->app->singleton(ScaffoldCommand::class);
-        $this->app->singleton(InstallCommand::class);
-        $this->app->singleton(CheckCommand::class);
-
-        $this->commands(self::COMMANDS);
     }
 }
