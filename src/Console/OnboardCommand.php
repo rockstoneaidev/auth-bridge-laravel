@@ -22,7 +22,6 @@ class OnboardCommand extends Command
         {--bootstrap-token= : Admin bearer token for the Auth API internal bootstrap}
         {--client-id= : Use an existing OAuth client id}
         {--client-secret= : Use an existing OAuth client secret}
-        {--app-id= : The application ID from the Auth API}
         {--dry : Show what would happen without changing anything}
     ';
 
@@ -45,7 +44,7 @@ class OnboardCommand extends Command
 
         $clientId = $this->option('client-id');
         $clientSecret = $this->option('client-secret');
-        $appId = $this->option('app-id');
+        $appId = null;
 
         $this->line("App Key: <info>{$appKey}</info>");
         $this->line("App Name: <info>{$appName}</info>");
@@ -75,15 +74,27 @@ class OnboardCommand extends Command
 
             $clientId = $client['client_id'] ?? $clientId;
             $clientSecret = $client['client_secret'] ?? $clientSecret;
-            $appId = $client['id'] ?? $appId;
+            $appId = $client['id'] ?? null;
+        } elseif ($clientId && $clientSecret) {
+            // If client ID and secret are provided, but no bootstrap token, try to fetch the app ID
+            $appId = $this->fetchAppIdFromAuthApi(
+                authBase: $authBase,
+                clientId: $clientId,
+                clientSecret: $clientSecret,
+                appKey: $appKey,
+            );
+
+            if (! $appId) {
+                $this->error('Could not retrieve App ID using provided client credentials.');
+                return self::FAILURE;
+            }
         }
 
         if (! $clientId || ! $clientSecret) {
             $this->warn('No client id/secret available. Re-run with --client-id/--client-secret or --bootstrap-token.');
         }
 
-        Log::info('OnboardCommand: Preparing to update .env with Client ID: ' . ($clientId ?? 'null') . ' and Client Secret: ' . ($clientSecret ? 'provided' : 'null'));
-        Log::info('OnboardCommand: Received App ID option: ' . ($this->option('app-id') ?? 'null'));
+        Log::info('OnboardCommand: Preparing to update .env with Client ID: ' . ($clientId ?? 'null') . ' and Client Secret: ' . ($clientSecret ? 'provided' : 'null') . ' and App ID: ' . ($appId ?? 'null'));
 
         $this->updateEnv(array_filter([
             'AUTH_BRIDGE_BASE_URL' => $authBase,
@@ -152,6 +163,35 @@ class OnboardCommand extends Command
         }
 
         return (array) $response->json();
+    }
+
+    private function fetchAppIdFromAuthApi(string $authBase, string $clientId, string $clientSecret, string $appKey): ?string
+    {
+        $path = (string) config('auth-bridge.app_lookup_path', '/apps/lookup');
+        $url = rtrim($authBase, '/') . '/' . ltrim($path, '/');
+        $this->info("Fetching App ID from Auth API… {$url}");
+
+        Log::debug('Auth API App ID Lookup URL: ' . $url);
+
+        try {
+            $response = Http::withBasicAuth($clientId, $clientSecret)->get($url, [
+                'app_key' => $appKey,
+            ]);
+
+            Log::debug('Auth API App ID Lookup Response: ' . $response->body());
+            Log::info('Auth API App ID Lookup Response: ' . $response->body());
+
+            if ($response->failed()) {
+                $this->error('Auth API App ID lookup failed: ' . $response->body());
+                return null;
+            }
+        } catch (\Throwable $e) {
+            Log::debug('Auth API App ID lookup request failed: ' . $e->getMessage());
+            $this->error('Auth API App ID lookup request failed: ' . $e->getMessage());
+            return null;
+        }
+
+        return $response->json('id');
     }
 
     private function updateEnv(array $keyValue): void
