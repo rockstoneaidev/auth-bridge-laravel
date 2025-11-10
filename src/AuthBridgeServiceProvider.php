@@ -4,22 +4,23 @@ declare(strict_types=1);
 
 namespace AuthBridge\Laravel;
 
+use AuthBridge\Laravel\Console\BootstrapAppCommand;
+use AuthBridge\Laravel\Console\CheckCommand;
+use AuthBridge\Laravel\Console\InstallCommand;
+use AuthBridge\Laravel\Console\OnboardCommand;
+use AuthBridge\Laravel\Console\ScaffoldCommand;
 use AuthBridge\Laravel\Guards\AuthBridgeGuard;
 use AuthBridge\Laravel\Http\AuthBridgeClient;
 use AuthBridge\Laravel\Http\Middleware\EnsureAuthBridgePermission;
 use AuthBridge\Laravel\Http\Middleware\EnsureAuthBridgeRole;
 use AuthBridge\Laravel\Support\AuthBridgeContext;
 use AuthBridge\Laravel\Support\UserSynchronizer;
-use AuthBridge\Laravel\Console\BootstrapAppCommand;
-use AuthBridge\Laravel\Console\CheckCommand;
-use AuthBridge\Laravel\Console\InstallCommand;
-use AuthBridge\Laravel\Console\OnboardCommand;
-use AuthBridge\Laravel\Console\ScaffoldCommand;
 use Illuminate\Auth\EloquentUserProvider;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Routing\Router;
@@ -28,6 +29,17 @@ use InvalidArgumentException;
 
 class AuthBridgeServiceProvider extends ServiceProvider
 {
+    /**
+     * @var list<class-string<\Illuminate\Console\Command>>
+     */
+    private const COMMANDS = [
+        OnboardCommand::class,
+        BootstrapAppCommand::class,
+        ScaffoldCommand::class,
+        InstallCommand::class,
+        CheckCommand::class,
+    ];
+
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/auth-bridge.php', 'auth-bridge');
@@ -48,15 +60,7 @@ class AuthBridgeServiceProvider extends ServiceProvider
             return new AuthBridgeContext($app['request']);
         });
 
-        if ($this->app->runningInConsole()) {
-            $this->commands([
-                OnboardCommand::class,
-                BootstrapAppCommand::class,
-                ScaffoldCommand::class,
-                InstallCommand::class,
-                CheckCommand::class,
-            ]);
-        }
+        $this->registerCommands();
     }
 
     public function boot(): void
@@ -148,5 +152,24 @@ class AuthBridgeServiceProvider extends ServiceProvider
 
         $router->aliasMiddleware('auth-bridge.permission', EnsureAuthBridgePermission::class);
         $router->aliasMiddleware('auth-bridge.role', EnsureAuthBridgeRole::class);
+    }
+
+    private function registerCommands(): void
+    {
+        foreach (self::COMMANDS as $command) {
+            $this->app->singleton($command);
+        }
+
+        if ($this->app->runningInConsole()) {
+            $this->commands(self::COMMANDS);
+
+            return;
+        }
+
+        $this->app->afterResolving(ConsoleKernel::class, function (ConsoleKernel $kernel) {
+            foreach (self::COMMANDS as $command) {
+                $kernel->registerCommand($this->app->make($command));
+            }
+        });
     }
 }
