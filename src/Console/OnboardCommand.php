@@ -32,14 +32,8 @@ class OnboardCommand extends Command
         Log::info('OnboardCommand started.');
         $appName = (string) ($this->option('app-name') ?: config('app.name', 'My App'));
         $appKey = (string) ($this->option('app-key') ?: Str::slug($appName));
-        $authBase = (string) $this->option('auth-base');
-        if ($authBase === '') {
-            $authBase = (string) config('auth-bridge.base_url');
-        }
-        $authBase = rtrim($authBase, '/');
-
+        $authBase = rtrim((string) ($this->option('auth-base') ?: config('auth-bridge.base_url')), '/');
         Log::info('Using Auth API Base URL: ' . $authBase);
-
         $redirectSuffix = (string) config('auth-bridge.default_redirect_suffix', '/oauth/callback');
         $redirect = (string) ($this->option('redirect') ?: (rtrim((string) config('app.url'), '/') . $redirectSuffix));
 
@@ -127,17 +121,25 @@ class OnboardCommand extends Command
         $url = rtrim($authBase, '/') . '/' . ltrim($path, '/');
         $this->info("Bootstrapping app in Auth API… {$url}");
 
-        $response = Http::withToken($token)->post($url, [
-            'app_key' => $appKey,
-            'app_name' => $appName,
-            'redirect_uri' => $redirect,
-            'account_ids' => array_values($accounts),
-        ]);
+        dump('Auth API URL: ' . $url);
 
-        Log::info('Auth API Bootstrap Response: ' . $response->body());
+        try {
+            $response = Http::withToken($token)->post($url, [
+                'app_key' => $appKey,
+                'app_name' => $appName,
+                'redirect_uri' => $redirect,
+                'account_ids' => array_values($accounts),
+            ]);
 
-        if ($response->failed()) {
-            $this->error('Auth API bootstrap failed: ' . $response->body());
+            dump('Auth API Bootstrap Response: ' . $response->body());
+
+            if ($response->failed()) {
+                $this->error('Auth API bootstrap failed: ' . $response->body());
+                return null;
+            }
+        } catch (\Throwable $e) {
+            dump('Auth API bootstrap request failed: ' . $e->getMessage());
+            $this->error('Auth API bootstrap request failed: ' . $e->getMessage());
             return null;
         }
 
