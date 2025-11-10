@@ -70,6 +70,7 @@ class OnboardCommand extends Command
 
             $clientId = $client['client_id'] ?? $clientId;
             $clientSecret = $client['client_secret'] ?? $clientSecret;
+            $appId = $client['app_id'] ?? null;
         }
 
         if (! $clientId || ! $clientSecret) {
@@ -79,11 +80,12 @@ class OnboardCommand extends Command
         $this->updateEnv(array_filter([
             'AUTH_BRIDGE_BASE_URL' => $authBase,
             'AUTH_BRIDGE_USER_ENDPOINT' => config('auth-bridge.user_endpoint', '/user'),
+            'AUTH_BRIDGE_APP_ID' => $appId ?? null,
+            'AUTH_BRIDGE_APP_KEY' => $appKey,
             'AUTH_BRIDGE_ACCOUNT_HEADER' => config('auth-bridge.headers.account', 'X-Account-ID'),
             'AUTH_BRIDGE_APP_HEADER' => config('auth-bridge.headers.app', 'X-App-Key'),
             'AUTH_BRIDGE_INPUT_KEY' => config('auth-bridge.guard.input_key', 'api_token'),
             'AUTH_BRIDGE_STORAGE_KEY' => config('auth-bridge.guard.storage_key', 'api_token'),
-            'APP_KEY_SLUG' => $appKey,
             'OAUTH_CLIENT_ID' => $clientId ?: null,
             'OAUTH_CLIENT_SECRET' => $clientSecret ?: null,
         ], fn ($value) => ! is_null($value)));

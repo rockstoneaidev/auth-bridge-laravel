@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'app_id' => env('AUTH_BRIDGE_APP_ID'),
+    'app_key' => env('AUTH_BRIDGE_APP_KEY'),
     /*
     |--------------------------------------------------------------------------
     | Auth API Base URL
