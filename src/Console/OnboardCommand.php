@@ -81,6 +81,8 @@ class OnboardCommand extends Command
             $this->warn('No client id/secret available. Re-run with --client-id/--client-secret or --bootstrap-token.');
         }
 
+        Log::info('OnboardCommand: Preparing to update .env with Client ID: ' . ($clientId ?? 'null') . ' and Client Secret: ' . ($clientSecret ? 'provided' : 'null'));
+
         $this->updateEnv(array_filter([
             'AUTH_BRIDGE_BASE_URL' => $authBase,
             'AUTH_BRIDGE_USER_ENDPOINT' => config('auth-bridge.user_endpoint', '/user'),
@@ -134,6 +136,7 @@ class OnboardCommand extends Command
 
             dump('Auth API Bootstrap Response: ' . $response->body());
             Log::debug('Auth API Bootstrap Response: ' . $response->body());
+            Log::info('Auth API Bootstrap Response: ' . $response->body());
 
             if ($response->failed()) {
                 $this->error('Auth API bootstrap failed: ' . $response->body());
