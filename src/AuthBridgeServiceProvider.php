@@ -22,6 +22,7 @@ use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Foundation\Providers\ArtisanServiceProvider;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
@@ -156,6 +157,10 @@ class AuthBridgeServiceProvider extends ServiceProvider
 
     private function registerCommands(): void
     {
+        if (! $this->app->runningInConsole()) {
+            $this->app->register(ArtisanServiceProvider::class);
+        }
+
         foreach (self::COMMANDS as $command) {
             $this->app->singleton($command);
         }
