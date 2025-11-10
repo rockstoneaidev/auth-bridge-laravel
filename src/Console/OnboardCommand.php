@@ -29,6 +29,7 @@ class OnboardCommand extends Command
 
     public function handle(): int
     {
+        Log::info('OnboardCommand started.');
         $appName = (string) ($this->option('app-name') ?: config('app.name', 'My App'));
         $appKey = (string) ($this->option('app-key') ?: Str::slug($appName));
         $authBase = rtrim((string) ($this->option('auth-base') ?: config('auth-bridge.base_url')), '/');
