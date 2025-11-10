@@ -73,7 +73,7 @@ class OnboardCommand extends Command
 
             $clientId = $client['client_id'] ?? $clientId;
             $clientSecret = $client['client_secret'] ?? $clientSecret;
-            $appId = $client['app_id'] ?? null;
+            $appId = $client['id'] ?? null;
         }
 
         if (! $clientId || ! $clientSecret) {
