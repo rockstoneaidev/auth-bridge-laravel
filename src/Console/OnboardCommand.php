@@ -41,6 +41,7 @@ class OnboardCommand extends Command
 
         $clientId = $this->option('client-id');
         $clientSecret = $this->option('client-secret');
+        $appId = null;
 
         $this->line("App Key: <info>{$appKey}</info>");
         $this->line("App Name: <info>{$appName}</info>");
