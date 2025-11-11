@@ -29,7 +29,7 @@ final class OnboardingState
 
         $payload = array_merge([
             'completed_at' => now()->toIso8601String(),
-            'app_key' => env('AUTH_BRIDGE_APP_KEY'),
+            'app_key' => env('APP_KEY_SLUG'),
         ], $meta);
 
         File::put(self::lockPath(), json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
