@@ -75,38 +75,27 @@ class OnboardCommand extends Command
             $clientId = $client['client_id'] ?? $clientId;
             $clientSecret = $client['client_secret'] ?? $clientSecret;
             $appId = $client['id'] ?? null;
-        } elseif ($clientId && $clientSecret) {
-            // If client ID and secret are provided, but no bootstrap token, try to fetch the app ID
-            $appId = $this->fetchAppIdFromAuthApi(
-                authBase: $authBase,
-                clientId: $clientId,
-                clientSecret: $clientSecret,
-                appKey: $appKey,
-            );
-
-            if (! $appId) {
-                $this->error('Could not retrieve App ID using provided client credentials.');
-                return self::FAILURE;
-            }
         }
 
         if (! $clientId || ! $clientSecret) {
-            $this->warn('No client id/secret available. Re-run with --client-id/--client-secret or --bootstrap-token.');
+            $this->warn('No client id/secret available. A bootstrap token is required to register the application.');
+            // We can't proceed without credentials, so it's best to stop.
+            return self::FAILURE;
         }
 
-        Log::info('OnboardCommand: Preparing to update .env with Client ID: ' . ($clientId ?? 'null') . ' and Client Secret: ' . ($clientSecret ? 'provided' : 'null') . ' and App ID: ' . ($appId ?? 'null'));
+        Log::info('OnboardCommand: Preparing to update .env with Client ID: ' . ($clientId ?? 'null') . ' and App ID: ' . ($appId ?? 'null'));
 
         $this->updateEnv(array_filter([
             'AUTH_BRIDGE_BASE_URL' => $authBase,
             'AUTH_BRIDGE_USER_ENDPOINT' => config('auth-bridge.user_endpoint', '/user'),
-            'AUTH_BRIDGE_APP_ID' => $appId ?? null,
+            'AUTH_BRIDGE_APP_ID' => $appId,
             'AUTH_BRIDGE_APP_KEY' => $appKey,
             'AUTH_BRIDGE_ACCOUNT_HEADER' => config('auth-bridge.headers.account', 'X-Account-ID'),
             'AUTH_BRIDGE_APP_HEADER' => config('auth-bridge.headers.app', 'X-App-Key'),
             'AUTH_BRIDGE_INPUT_KEY' => config('auth-bridge.guard.input_key', 'api_token'),
             'AUTH_BRIDGE_STORAGE_KEY' => config('auth-bridge.guard.storage_key', 'api_token'),
-            'OAUTH_CLIENT_ID' => $clientId ?: null,
-            'OAUTH_CLIENT_SECRET' => $clientSecret ?: null,
+            'OAUTH_CLIENT_ID' => $clientId,
+            'OAUTH_CLIENT_SECRET' => $clientSecret,
         ], fn ($value) => ! is_null($value)));
 
         if ($this->call(ScaffoldCommand::class) !== self::SUCCESS) {
@@ -163,73 +152,6 @@ class OnboardCommand extends Command
         }
 
         return (array) $response->json();
-    }
-
-    private function fetchAppIdFromAuthApi(string $authBase, string $clientId, string $clientSecret, string $appKey): ?string
-    {
-        // Step 1: Get an access token using client credentials
-        $tokenUrl = rtrim($authBase, '/') . '/../..' . '/oauth/token'; // Navigate from /api/v1 to root
-        $this->info("Fetching access token from Auth API… {$tokenUrl}");
-        Log::debug('Auth API Token URL: ' . $tokenUrl);
-
-        try {
-            $tokenResponse = Http::asForm()->post($tokenUrl, [
-                'grant_type' => 'client_credentials',
-                'client_id' => $clientId,
-                'client_secret' => $clientSecret,
-            ]);
-
-            if ($tokenResponse->failed()) {
-                $this->error('Auth API token request failed: ' . $tokenResponse->body());
-                Log::error('Auth API token request failed', ['body' => $tokenResponse->json()]);
-                return null;
-            }
-
-            $accessToken = $tokenResponse->json('access_token');
-            if (! $accessToken) {
-                $this->error('Auth API did not return an access token.');
-                return null;
-            }
-
-        } catch (\Throwable $e) {
-            $this->error('Auth API token request threw an exception: ' . $e->getMessage());
-            Log::error('Auth API token request exception', ['exception' => $e]);
-            return null;
-        }
-
-
-        // Step 2: Use the access token to fetch the App ID
-        $path = (string) config('auth-bridge.app_lookup_path', '/apps');
-        $url = rtrim($authBase, '/') . '/' . ltrim($path, '/');
-        $this->info("Fetching App ID from Auth API… {$url}");
-        Log::debug('Auth API App ID Lookup URL: ' . $url);
-
-        try {
-            $response = Http::withToken($accessToken)->get($url, [
-                'app_key' => $appKey,
-            ]);
-
-            Log::debug('Auth API App ID Lookup Response: ' . $response->body());
-            Log::info('Auth API App ID Lookup Response: ' . $response->body());
-
-            if ($response->failed()) {
-                $this->error('Auth API App ID lookup failed: ' . $response->body());
-                return null;
-            }
-
-            $apps = $response->json();
-            if (empty($apps) || !isset($apps[0]['id'])) {
-                $this->error('Auth API returned no matching app for the given app_key.');
-                return null;
-            }
-
-            return $apps[0]['id'];
-
-        } catch (\Throwable $e) {
-            Log::debug('Auth API App ID lookup request failed: ' . $e->getMessage());
-            $this->error('Auth API App ID lookup request failed: ' . $e->getMessage());
-            return null;
-        }
     }
 
     private function updateEnv(array $keyValue): void
