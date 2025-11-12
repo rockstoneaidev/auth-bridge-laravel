@@ -91,14 +91,14 @@ class ScaffoldCommand extends Command
         if (Str::contains($contents, 'protected $middlewareAliases = [')) {
             $updated = str_replace(
                 'protected $middlewareAliases = [',
-                "protected \\$middlewareAliases = [\n        'inject-auth-ctx' => \\App\\Http\\Middleware\\InjectAuthBridgeContext::class,",
+                "protected \$middlewareAliases = [\n        'inject-auth-ctx' => \\App\\Http\\Middleware\\InjectAuthBridgeContext::class,",
                 $contents,
                 $count
             );
         } else {
             $updated = str_replace(
                 'protected $routeMiddleware = [',
-                "protected \\$routeMiddleware = [\n        'inject-auth-ctx' => \\App\\Http\\Middleware\\InjectAuthBridgeContext::class,",
+                "protected \$routeMiddleware = [\n        'inject-auth-ctx' => \\App\\Http\\Middleware\\InjectAuthBridgeContext::class,",
                 $contents,
                 $count
             );
