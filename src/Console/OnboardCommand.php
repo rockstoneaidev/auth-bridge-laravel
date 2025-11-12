@@ -156,7 +156,9 @@ class OnboardCommand extends Command
 
         foreach ($keyValue as $key => $value) {
             $pattern = "/^" . preg_quote($key, '/') . "=.*$/m";
-            $line = $key . '=' . $value;
+            // Quote the value if it contains special characters or spaces
+            $quotedValue = $this->shouldQuoteValue($value) ? '"' . addcslashes($value, '"\\') . '"' : $value;
+            $line = $key . '=' . $quotedValue;
             $env = preg_match($pattern, $env)
                 ? (string) preg_replace($pattern, $line, $env)
                 : rtrim($env) . PHP_EOL . $line . PHP_EOL;
@@ -168,5 +170,11 @@ class OnboardCommand extends Command
         } catch (\Throwable $e) {
             Log::error('updateEnv: Failed to write to .env file: ' . $e->getMessage());
         }
+    }
+
+    private function shouldQuoteValue(string $value): bool
+    {
+        // Quote if value contains special characters: $, space, #, ", ', \, etc.
+        return preg_match('/[\s$#"\'\\\]/', $value) === 1;
     }
 }
