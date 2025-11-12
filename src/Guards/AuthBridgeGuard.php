@@ -66,10 +66,16 @@ class AuthBridgeGuard implements Guard
             $payload = $this->fetchRemoteUser($token, $headers);
         }
 
+        $rawPayload = $payload;
+        $payload = Arr::get($rawPayload, 'data', $rawPayload);
+
         $context = [
-            'account_id' => Arr::get($payload, 'context.account.id')
+            'account_id' => Arr::get($rawPayload, 'context.account.id')
+                ?? Arr::get($payload, 'account.id')
+                ?? Arr::get($payload, 'accounts.0.id')
                 ?? $headers[$this->config['headers']['account'] ?? 'X-Account-ID'] ?? null,
-            'app_key' => Arr::get($payload, 'app.key')
+            'app_key' => Arr::get($rawPayload, 'app.key')
+                ?? Arr::get($payload, 'app.key')
                 ?? $headers[$this->config['headers']['app'] ?? 'X-App-Key'] ?? null,
         ];
 

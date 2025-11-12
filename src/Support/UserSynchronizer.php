@@ -102,15 +102,15 @@ class UserSynchronizer
         }
 
         if ($accountIdsColumn) {
-            $attributes[$accountIdsColumn] = $accounts;
+            $attributes[$accountIdsColumn] = $this->encodeJsonValue($accounts);
         }
 
         if ($appIdsColumn) {
-            $attributes[$appIdsColumn] = $apps;
+            $attributes[$appIdsColumn] = $this->encodeJsonValue($apps);
         }
 
         if ($payloadColumn) {
-            $attributes[$payloadColumn] = $payload;
+            $attributes[$payloadColumn] = $this->encodeJsonValue($payload);
         }
 
         if ($syncedAtColumn) {
@@ -135,5 +135,18 @@ class UserSynchronizer
         $user->save();
 
         return $user;
+}
+
+    private function encodeJsonValue(mixed $value): mixed
+    {
+        if (is_null($value)) {
+            return null;
+        }
+
+        if (is_array($value) || is_object($value)) {
+            return json_encode($value, JSON_UNESCAPED_SLASHES);
+        }
+
+        return $value;
     }
 }
