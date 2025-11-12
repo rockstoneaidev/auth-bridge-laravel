@@ -20,7 +20,7 @@ final class OnboardingState
             return false;
         }
 
-        return filled(env('OAUTH_CLIENT_ID')) && filled(env('OAUTH_CLIENT_SECRET'));
+        return filled(config('auth-bridge.oauth.client_id')) && filled(config('auth-bridge.oauth.client_secret'));
     }
 
     public static function markComplete(array $meta = []): void
@@ -29,7 +29,7 @@ final class OnboardingState
 
         $payload = array_merge([
             'completed_at' => now()->toIso8601String(),
-            'app_key' => env('APP_KEY_SLUG'),
+            'app_key' => config('auth-bridge.app_key'),
         ], $meta);
 
         File::put(self::lockPath(), json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
