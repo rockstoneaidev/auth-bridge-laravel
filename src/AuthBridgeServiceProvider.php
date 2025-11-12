@@ -92,8 +92,7 @@ class AuthBridgeServiceProvider extends ServiceProvider
                 => $this->app->databasePath("migrations/{$timestamp}_add_auth_bridge_columns_to_users_table.php"),
         ], 'auth-bridge-migrations');
 
-        // ⭐ Publish your Svelte pages from the package's stubs path:
-        // src/ (this file) → ../stubs/scaffold/resources/js/Pages → host resources/js/Pages/AuthBridge
+        // Publish Svelte pages from stubs/scaffold into a namespaced folder in the app
         $this->publishes([
             __DIR__ . '/../stubs/scaffold/resources/js/Pages' => resource_path('js/Pages/AuthBridge'),
         ], 'auth-bridge-svelte-pages');
