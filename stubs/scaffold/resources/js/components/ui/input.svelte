@@ -15,7 +15,7 @@
 <input
   {type}
   {value}
-  on:input
+  on:input={(e) => value = e.target.value}
   {placeholder}
   {id}
   {name}
