@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Cookie;
 
@@ -22,12 +23,12 @@ class OAuthController extends Controller
 
     private function clientId(): string
     {
-        return (string) env('OAUTH_CLIENT_ID');
+        return (string) config('auth-bridge.oauth.client_id');
     }
 
     private function clientSecret(): string
     {
-        return (string) env('OAUTH_CLIENT_SECRET');
+        return (string) config('auth-bridge.oauth.client_secret');
     }
 
     private function redirectUri(): string
@@ -37,7 +38,7 @@ class OAuthController extends Controller
 
     private function appKey(): string
     {
-        return (string) env('APP_KEY_SLUG', 'myapp');
+        return (string) config('auth-bridge.app_key');
     }
 
     private function storageKey(): string
@@ -66,7 +67,11 @@ class OAuthController extends Controller
         $state = $request->session()->pull('oauth_state');
         abort_unless($state && $state === $request->query('state'), 400, 'Invalid state');
 
-        $response = Http::asForm()->post($this->base() . '/oauth/token', [
+        // Use publicBase() to get the external URL without /api/v1 suffix
+        // Laravel Passport registers /oauth/token at the root level, not under /api/v1
+        $tokenUrl = rtrim(str_replace('/api/v1', '', $this->publicBase()), '/') . '/oauth/token';
+
+        $response = Http::asForm()->post($tokenUrl, [
             'grant_type' => 'authorization_code',
             'client_id' => $this->clientId(),
             'client_secret' => $this->clientSecret(),
@@ -74,7 +79,14 @@ class OAuthController extends Controller
             'code' => $request->query('code'),
         ]);
 
-        abort_if($response->failed(), 401, 'Token exchange failed');
+        if ($response->failed()) {
+            Log::error('OAuth token exchange failed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'url' => $tokenUrl,
+            ]);
+            abort(401, 'Token exchange failed');
+        }
 
         $json = $response->json();
         $accessToken = $json['access_token'] ?? null;

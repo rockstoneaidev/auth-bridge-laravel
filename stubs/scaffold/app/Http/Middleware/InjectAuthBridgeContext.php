@@ -10,12 +10,12 @@ class InjectAuthBridgeContext
     public function handle(Request $request, Closure $next)
     {
         if ($account = session('x_account_id')) {
-            $request->headers->set(env('AUTH_BRIDGE_ACCOUNT_HEADER', 'X-Account-ID'), $account);
+            $request->headers->set(config('auth-bridge.headers.account'), $account);
         }
 
         $request->headers->set(
-            env('AUTH_BRIDGE_APP_HEADER', 'X-App-Key'),
-            env('APP_KEY_SLUG', 'myapp')
+            config('auth-bridge.headers.app'),
+            config('auth-bridge.app_key')
         );
 
         return $next($request);

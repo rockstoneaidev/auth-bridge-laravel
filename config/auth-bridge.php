@@ -3,17 +3,32 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Application Credentials (Onboarding)
+    | Application Credentials
     |--------------------------------------------------------------------------
     |
-    | These credentials are used during the onboarding process when registering
-    | your application with the Auth API. After onboarding, the OAuth client
-    | credentials (OAUTH_CLIENT_ID/OAUTH_CLIENT_SECRET) are used instead.
+    | App identification and OAuth credentials for authenticating with the
+    | centralized Auth API.
     |
     */
 
     'app_id' => env('AUTH_BRIDGE_APP_ID'),
-    'app_key' => env('AUTH_BRIDGE_APP_KEY'),
+    'app_key' => env('APP_KEY_SLUG', 'myapp'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | OAuth2 Client Configuration
+    |--------------------------------------------------------------------------
+    |
+    | OAuth client credentials for authenticating with the centralized Auth API.
+    | These are created via the auth-bridge onboarding process or manually
+    | via Laravel Passport in the Auth API.
+    |
+    */
+
+    'oauth' => [
+        'client_id' => env('OAUTH_CLIENT_ID'),
+        'client_secret' => env('OAUTH_CLIENT_SECRET'),
+    ],
 
     /*
     |--------------------------------------------------------------------------
