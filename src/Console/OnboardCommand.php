@@ -92,6 +92,7 @@ class OnboardCommand extends Command
             'APP_KEY_SLUG' => $appKey,
             'OAUTH_CLIENT_ID' => $clientId,
             'OAUTH_CLIENT_SECRET' => $clientSecret,
+            'AUTH_BRIDGE_ONBOARDED' => 'true',
         ], fn ($value) => ! is_null($value)));
 
         if ($this->call('config:clear') !== self::SUCCESS) {

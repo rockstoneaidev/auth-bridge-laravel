@@ -161,6 +161,7 @@ What the command does:
 3. Writes/updates the required `.env` keys (`APP_KEY_SLUG`, `AUTH_BRIDGE_*`, `OAUTH_CLIENT_*`).
 4. Scaffolds the OAuth controller, middleware, routes, and the matching Inertia/Svelte pages/components that power the default login/logout experience.
 5. Executes `auth-bridge:check` to hit `/health` and, if a token is supplied, `/user`.
+6. Flags the installation as complete by setting `AUTH_BRIDGE_ONBOARDED=true` (used by the onboarding middleware guard).
 
 `--dry` prints the plan without touching disk or calling remote services. Supply `--client-id/--client-secret` to skip the Auth API bootstrap step.
 
@@ -227,6 +228,7 @@ Guardrails/best practices:
 - Avoid echoing client secrets in CI logs; the command only writes them to `.env` unless you print Artisan output.
 - Run with `--dry` in pull requests to show intent without mutating files.
 - Because scaffolding is additive and idempotent, it is safe to re-run after editing routes/controller, but keep customizations separate or use `--force` selectively.
+- To rerun onboarding from scratch, delete `storage/bootstrap/onboarding.json` **and** remove or set `AUTH_BRIDGE_ONBOARDED=false` in `.env` before refreshing `/onboarding`.
 
 ## Why a Local `users` Table?
 

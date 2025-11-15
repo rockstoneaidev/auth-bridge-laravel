@@ -12,7 +12,7 @@ final class OnboardingState
 
     public static function isComplete(): bool
     {
-        if (self::isBypassed()) {
+        if (self::isBypassed() || self::wasFlaggedComplete()) {
             return true;
         }
 
@@ -45,6 +45,21 @@ final class OnboardingState
     private static function isBypassed(): bool
     {
         $value = env('ONBOARDING_BYPASS');
+
+        if ($value === null) {
+            return false;
+        }
+
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private static function wasFlaggedComplete(): bool
+    {
+        $value = env('AUTH_BRIDGE_ONBOARDED');
 
         if ($value === null) {
             return false;
