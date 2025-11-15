@@ -182,6 +182,33 @@ What the command does:
 | `auth-bridge:scaffold` | Generates/updates the OAuth controller, middleware, routes, and Inertia/Svelte UI. Pass `--force` to overwrite local edits. |
 | `auth-bridge:check` | Hits `/health` and (optionally) `/user` using `--token` or `AUTH_BRIDGE_CHECK_TOKEN`. |
 
+## Authorization Code contract
+
+Every downstream Laravel app authenticates exclusively through the Auth API (email/password, Google, MFA). The scaffolding produced by `auth-bridge:onboard` hard-codes this contract:
+
+- `AUTH_BRIDGE_BASE_URL` points to the internal API root (often `http://auth_api/api/v1`) and is used for `/api/v1/*` calls.
+- `AUTH_BRIDGE_PUBLIC_URL` points to the Auth API host without `/api` (e.g. `http://localhost:8081`) and is used for `/oauth/*` browser redirects.
+- `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` reference the Passport client that belongs to the app.
+- `VITE_AUTH_BRIDGE_BASE_URL` should mirror `AUTH_BRIDGE_PUBLIC_URL` so the Svelte UI can link to the Auth Portal (e.g. the “Register” CTA on the homepage/login page).
+
+### Generated routes
+
+```
+GET  /                 → Home (Inertia)
+GET  /login            → Auth/Login (explains redirect-only flow)
+GET  /oauth/redirect   → starts Authorization Code flow (state cookie)
+GET  /oauth/callback   → exchanges code for tokens and stores them in the session/api_token cookie
+POST /logout           → revokes token (optional) + clears cookie/session
+```
+
+Protected routes should apply `['inject-auth-ctx', 'auth:auth-bridge']` so the request headers contain `X-App-Key` / `X-Account-ID` before the guard calls the Auth API `/user` endpoint. The package keeps `/onboarding` available until `storage/bootstrap/onboarding.json` exists, ensuring first-run onboarding happens before any login attempt.
+
+### Frontend behavior
+
+- `/login` renders a simple Inertia/Svelte view with a single “Continue to Auth Portal” button. No password fields live in the downstream apps.
+- The homepage shows “Login” (links to `/login`) and “Register” (links to `${VITE_AUTH_BRIDGE_BASE_URL}/register`) once onboarding is complete.
+- After the Auth API redirects back to `/oauth/callback`, the controller writes the bearer token to the `api_token` cookie so the `auth-bridge` guard can call `/api/v1/user` on subsequent requests.
+
 ### Manual fallback / customization
 
 Prefer the commands, but if you cannot hit the internal bootstrap endpoint from your environment, complete these steps manually:

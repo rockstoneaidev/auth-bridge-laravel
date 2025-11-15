@@ -12,29 +12,12 @@ use Symfony\Component\HttpFoundation\Cookie;
 
 class OAuthController extends Controller
 {
-    private const SUPPORTED_SOCIAL_PROVIDERS = ['google'];
-
     public function redirect(Request $request)
     {
         [$state, $stateCookie] = $this->prepareState($request);
-        $url = $this->oauthAuthorizeUrl($state);
+        $authorizeUrl = $this->oauthAuthorizeUrl($state);
 
-        return $this->inertiaAwareRedirect($request, $url, $stateCookie);
-    }
-
-    public function social(Request $request, string $provider)
-    {
-        abort_unless(in_array($provider, self::SUPPORTED_SOCIAL_PROVIDERS, true), 404);
-
-        [$state, $stateCookie] = $this->prepareState($request);
-
-        $intended = $this->oauthAuthorizeUrl($state);
-        $providerPath = 'login/social/' . urlencode($provider);
-        $url = $this->authServerEndpoint($this->publicBase(), $providerPath) . '?' . http_build_query([
-            'intended' => $intended,
-        ]);
-
-        return $this->inertiaAwareRedirect($request, $url, $stateCookie);
+        return $this->inertiaAwareRedirect($request, $authorizeUrl, $stateCookie);
     }
 
     public function callback(Request $request)
@@ -55,9 +38,6 @@ class OAuthController extends Controller
 
         abort_unless($isValidState, 400, 'Invalid state');
 
-        // Use base() (internal URL) for server-to-server token exchange
-        // Laravel Passport registers /oauth/token at the root level, not under /api/v1
-        // Note: This is a server-to-server call, so we use the internal Docker URL
         $tokenUrl = $this->authServerEndpoint($this->base(), 'oauth/token');
 
         $response = Http::asForm()->post($tokenUrl, [
@@ -74,14 +54,21 @@ class OAuthController extends Controller
                 'body' => $response->body(),
                 'url' => $tokenUrl,
             ]);
+
             abort(401, 'Token exchange failed');
         }
 
-        $json = $response->json();
-        $accessToken = $json['access_token'] ?? null;
-        $expiresIn = (int) ($json['expires_in'] ?? 1800);
+        $payload = $response->json();
+        $accessToken = $payload['access_token'] ?? null;
+        $refreshToken = $payload['refresh_token'] ?? null;
+        $expiresIn = (int) ($payload['expires_in'] ?? 1800);
+
+        if (! $accessToken) {
+            abort(401, 'Token exchange failed');
+        }
 
         $request->session()->put('access_token', $accessToken);
+        $request->session()->put('refresh_token', $refreshToken);
         $request->session()->put('token_expires_at', now()->addSeconds($expiresIn));
 
         $cookie = Cookie::create($this->storageKey())
@@ -93,15 +80,16 @@ class OAuthController extends Controller
 
         session(['x_app_key' => $this->appKey()]);
 
-        return redirect('/')->withCookie($cookie)->withCookie($stateCleanupCookie);
+        return redirect()->route('dashboard')->withCookie($cookie)->withCookie($stateCleanupCookie);
     }
 
     public function logout(Request $request)
     {
         if ($token = $request->session()->pull('access_token')) {
-            Http::withToken($token)->post($this->authServerEndpoint($this->base(), 'logout'));
+            Http::withToken($token)->post($this->apiEndpoint('logout'));
         }
 
+        $request->session()->forget(['refresh_token', 'token_expires_at']);
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
@@ -113,7 +101,7 @@ class OAuthController extends Controller
             ->withValue('')
             ->withExpires(time() - 3600);
 
-        return redirect('/login')->withCookie($cookie)->withCookie($stateCleanupCookie);
+        return redirect()->route('home')->withCookie($cookie)->withCookie($stateCleanupCookie);
     }
 
     private function base(): string
@@ -166,7 +154,7 @@ class OAuthController extends Controller
      */
     private function prepareState(Request $request): array
     {
-        $state = Str::random(32);
+        $state = Str::random(40);
         $request->session()->put('oauth_state', $state);
 
         $stateCookie = Cookie::create($this->stateCookieName())
@@ -215,6 +203,11 @@ class OAuthController extends Controller
         }
 
         return rtrim($root, '/') . '/' . ltrim($path, '/');
+    }
+
+    private function apiEndpoint(string $path): string
+    {
+        return rtrim($this->base(), '/') . '/' . ltrim($path, '/');
     }
 
     private function authServerBase(string $url): string

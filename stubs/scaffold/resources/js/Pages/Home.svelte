@@ -6,7 +6,9 @@
 
   export let auth = { isAuthenticated: false, user: null };
 
-  const goToRegister = () => router.visit('/register');
+  const authPortalUrl = (import.meta.env.VITE_AUTH_BRIDGE_BASE_URL ?? 'http://localhost:8081').replace(/\/$/, '');
+  const registerUrl = `${authPortalUrl}/register`;
+
   const goToDashboard = () => router.visit('/dashboard');
   const logout = () => router.post('/logout');
 
@@ -46,11 +48,8 @@
         <Button href="/login">
           Login
         </Button>
-        <Button variant="secondary" on:click={goToRegister}>
+        <Button variant="secondary" href={registerUrl}>
           Register
-        </Button>
-        <Button variant="ghost" className="border border-input" href="/login/social/google">
-          Continue with Google
         </Button>
       {/if}
     </div>
