@@ -59,6 +59,7 @@ class ScaffoldCommand extends Command
 
         $this->registerMiddlewareAlias();
         $this->registerOnboardingMiddleware();
+        $this->ensureAuthGuardConfigured();
         $this->appendRoutes();
     }
 
@@ -131,6 +132,39 @@ class ScaffoldCommand extends Command
 
         $this->filesystem->put($bootstrap, $updated);
         $this->info('Registered RedirectIfNotOnboarded in the web middleware group via bootstrap/app.php.');
+    }
+
+    private function ensureAuthGuardConfigured(): void
+    {
+        $authConfig = config_path('auth.php');
+
+        if (! $this->filesystem->exists($authConfig)) {
+            return;
+        }
+
+        $contents = $this->filesystem->get($authConfig);
+
+        if (Str::contains($contents, "'auth-bridge' => [")) {
+            return;
+        }
+
+        $needle = "'guards' => [";
+
+        if (! Str::contains($contents, $needle)) {
+            $this->warn('Unable to locate guards array in config/auth.php. Add the auth-bridge guard manually.');
+            return;
+        }
+
+        $guardSnippet = "        'auth-bridge' => [\n"
+            . "            'driver' => 'auth-bridge',\n"
+            . "            'provider' => 'users',\n"
+            . "            'cache_ttl' => env('AUTH_BRIDGE_CACHE_TTL', 30),\n"
+            . "        ],\n";
+
+        $updated = Str::replaceFirst($needle, $needle . "\n" . $guardSnippet, $contents);
+
+        $this->filesystem->put($authConfig, $updated);
+        $this->info('Added auth-bridge guard definition to config/auth.php.');
     }
 
     private function appendRoutes(): void
