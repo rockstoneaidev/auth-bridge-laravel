@@ -57,6 +57,11 @@ class ScaffoldCommand extends Command
             app_path('Support/OnboardingState.php')
         );
 
+        $this->publishFileFromStub(
+            'app/Http/Middleware/HandleInertiaRequests.php',
+            app_path('Http/Middleware/HandleInertiaRequests.php')
+        );
+
         $this->registerMiddlewareAlias();
         $this->registerOnboardingMiddleware();
         $this->ensureAuthGuardConfigured();
