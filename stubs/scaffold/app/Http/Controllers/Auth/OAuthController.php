@@ -38,7 +38,7 @@ class OAuthController extends Controller
 
         abort_unless($isValidState, 400, 'Invalid state');
 
-        $tokenUrl = $this->authServerEndpoint($this->base(), 'oauth/token');
+        $tokenUrl = $this->apiEndpoint('oauth/token');
 
         $response = Http::asForm()->post($tokenUrl, [
             'grant_type' => 'authorization_code',

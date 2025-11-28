@@ -207,8 +207,13 @@
       <div class="rounded-lg border border-border bg-card p-6 space-y-4">
         <div>
           <h2 class="text-xl font-semibold mb-4">Step 2: Configure Application</h2>
-          <p class="text-sm text-muted-foreground mb-4">
+          <p class="text-sm text-muted-foreground mb-2">
             Set up your application details and OAuth configuration.
+          </p>
+          <p class="text-xs text-muted-foreground">
+            Use `/api/v1/internal/apps/bootstrap` (or this wizard) once to mint the Passport client + secret.
+            After that, manage metadata via `/api/v1/apps`. Downstream apps must still redirect through the
+            Auth API OAuth screen—even if you are already signed into the portal—so they can receive their own token.
           </p>
         </div>
 
