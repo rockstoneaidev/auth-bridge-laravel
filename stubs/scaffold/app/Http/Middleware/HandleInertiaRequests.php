@@ -21,7 +21,7 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        $user = $request->user();
+        $user = $request->user('auth-bridge');
         $columns = config('auth-bridge.user', []);
 
         $externalIdColumn = $columns['external_id_column'] ?? 'external_user_id';
