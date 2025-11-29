@@ -146,7 +146,50 @@ class UserSynchronizer
 
         $user->save();
 
+        $this->syncAppRoles($user, $payload, $context);
+
         return $user;
+    }
+
+    private function syncAppRoles(Model $user, array $payload, array $context): void
+    {
+        if (! method_exists($user, 'syncRoles')) {
+            return;
+        }
+
+        $appKey = $context['app_key'] ?? config('auth-bridge.app_key');
+        // Fallback: If no app key context, try to derive from environment or config default
+        $appKey ??= env('APP_KEY_SLUG');
+
+        $accountId = $context['account_id']
+            ?? Arr::get($payload, 'account.id')
+            ?? Arr::get($payload, 'accounts.0.id');
+
+        if (! $appKey || ! $accountId) {
+            return;
+        }
+
+        $accounts = Arr::get($payload, 'accounts', []);
+        
+        $activeAccount = collect($accounts)->first(function ($account) use ($accountId) {
+            return (string) ($account['id'] ?? '') === (string) $accountId;
+        });
+
+        if (! $activeAccount) {
+            return;
+        }
+
+        $appRoles = Arr::get($activeAccount, 'app_roles', []);
+
+        $roles = collect($appRoles)
+            ->filter(fn (array $role) => ($role['app_key'] ?? null) === $appKey)
+            ->pluck('role_name')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $user->syncRoles($roles);
     }
 
     private function encodeJsonValue(mixed $value): mixed
