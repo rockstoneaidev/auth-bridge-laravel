@@ -67,7 +67,7 @@ class ScaffoldCommand extends Command
             app_path('Http/Middleware/HandleInertiaRequests.php')
         );
 
-        $this->registerMiddlewareAlias();
+        $this->registerPackageMiddleware();
         $this->registerOnboardingMiddleware();
         $this->ensureAuthGuardConfigured();
         $this->appendRoutes();
@@ -85,7 +85,7 @@ class ScaffoldCommand extends Command
         $this->publishDirectoryFromStub('resources/js/Pages', resource_path('js/Pages'));
     }
 
-    private function registerAuthContextMiddleware(): void
+    private function registerPackageMiddleware(): void
     {
         $bootstrap = base_path('bootstrap/app.php');
 
@@ -95,7 +95,7 @@ class ScaffoldCommand extends Command
 
         $contents = $this->filesystem->get($bootstrap);
 
-        // Register alias if missing
+        // 1. Register alias for InjectAuthBridgeContext if missing
         if (! Str::contains($contents, "'inject-auth-ctx'")) {
             $needle = '->withMiddleware(function (Middleware $middleware): void {';
             if (Str::contains($contents, $needle)) {
@@ -105,15 +105,26 @@ class ScaffoldCommand extends Command
             }
         }
 
-        // Prepend to web group if missing
-        $middlewareClass = '\\App\\Http\\Middleware\\InjectAuthBridgeContext::class';
-        if (! Str::contains($contents, $middlewareClass)) {
+        // 2. Prepend middleware to web group
+        // We prepend to ensure they run before HandleInertiaRequests and other app logic.
+        $middlewaresToPrepend = [
+            '\\App\\Http\\Middleware\\InjectAuthBridgeContext::class',
+            '\\AuthBridge\\Laravel\\Http\\Middleware\\HandleAuthBridgeSessionExpired::class',
+        ];
+
+        $prependBlock = "";
+        foreach ($middlewaresToPrepend as $class) {
+            if (! Str::contains($contents, $class)) {
+                $prependBlock .= "            {$class},\n";
+            }
+        }
+
+        if (! empty($prependBlock)) {
             $needle = '->withMiddleware(function (Middleware $middleware): void {';
             if (Str::contains($contents, $needle)) {
-                // We prepend to ensure it runs before HandleInertiaRequests
-                $prependSnippet = "        \$middleware->prependToGroup('web', [\n            {$middlewareClass},\n        ]);\n";
-                $contents = Str::replaceFirst($needle, $needle . "\n" . $prependSnippet, $contents);
-                $this->info('Prepended InjectAuthBridgeContext to web middleware group via bootstrap/app.php.');
+                $snippet = "        \$middleware->prependToGroup('web', [\n{$prependBlock}        ]);\n";
+                $contents = Str::replaceFirst($needle, $needle . "\n" . $snippet, $contents);
+                $this->info('Prepended AuthBridge middleware to web group via bootstrap/app.php.');
             }
         }
 
