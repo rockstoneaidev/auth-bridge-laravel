@@ -129,7 +129,7 @@ class OnboardCommand extends Command
         Log::debug('Auth API URL: ' . $url);
 
         try {
-            $response = Http::withToken($token)->post($url, [
+            $response = Http::withToken($token)->acceptJson()->post($url, [
                 'app_key' => $appKey,
                 'app_name' => $appName,
                 'redirect_uri' => $redirect,
