@@ -1,17 +1,23 @@
 // --- AuthBridge scaffolding ---
-\Illuminate\Support\Facades\Route::middleware('web')->group(function () {
-    \Illuminate\Support\Facades\Route::get('/onboarding', [\App\Http\Controllers\OnboardingController::class, 'show'])->name('onboarding.show');
-    \Illuminate\Support\Facades\Route::post('/onboarding/token', [\App\Http\Controllers\OnboardingController::class, 'getBootstrapToken'])->name('onboarding.token');
-    \Illuminate\Support\Facades\Route::post('/onboarding/run', [\App\Http\Controllers\OnboardingController::class, 'run'])->name('onboarding.run');
+Route::middleware(['web', 'inject-auth-ctx'])->group(function () {
+    Route::get('/onboarding', [\App\Http\Controllers\OnboardingController::class, 'show'])->name('onboarding.show');
+    Route::post('/onboarding/token', [\App\Http\Controllers\OnboardingController::class, 'getBootstrapToken'])->name('onboarding.token');
+    Route::post('/onboarding/run', [\App\Http\Controllers\OnboardingController::class, 'run'])->name('onboarding.run');
 
-    \Illuminate\Support\Facades\Route::get('/', fn () => \Inertia\Inertia::render('Home'))->name('home');
-    \Illuminate\Support\Facades\Route::get('/login', fn () => \Inertia\Inertia::render('Auth/Login'))->name('login');
-    \Illuminate\Support\Facades\Route::get('/oauth/redirect', [\App\Http\Controllers\Auth\OAuthController::class, 'redirect'])->name('oauth.redirect');
-    \Illuminate\Support\Facades\Route::get('/oauth/callback', [\App\Http\Controllers\Auth\OAuthController::class, 'callback'])->name('oauth.callback');
-    \Illuminate\Support\Facades\Route::post('/logout', [\App\Http\Controllers\Auth\OAuthController::class, 'logout'])->name('logout');
+    Route::get('/', fn () => \Inertia\Inertia::render('Home'))->name('home');
+    Route::get('/login', fn () => \Inertia\Inertia::render('Auth/Login'))->name('login');
+    Route::get('/oauth/redirect', [\App\Http\Controllers\Auth\OAuthController::class, 'redirect'])->name('oauth.redirect');
+    Route::get('/oauth/callback', [\App\Http\Controllers\Auth\OAuthController::class, 'callback'])->name('oauth.callback');
+    Route::post('/logout', [\App\Http\Controllers\Auth\OAuthController::class, 'logout'])->name('logout');
+
+    // Make /me route also accessible via inject-auth-ctx,
+    // and potentially protected by auth:auth-bridge when used directly.
+    // For general public pages, it doesn't need auth:auth-bridge, as HandleInertiaRequests
+    // will pick up the user if 'inject-auth-ctx' makes it available.
+    Route::get('/me', fn () => \Inertia\Inertia::render('Dashboard')); // Re-route /me to dashboard for consistent UI
 });
 
-\Illuminate\Support\Facades\Route::middleware(['inject-auth-ctx', 'auth:auth-bridge'])->group(function () {
-    \Illuminate\Support\Facades\Route::get('/me', fn () => request()->user());
-});
+// Any routes requiring ONLY 'auth:auth-bridge' but not 'web' (e.g., API-only routes),
+// should go in a separate group if needed, but for now this is simpler.
+// Removed the separate group that only contained '/me' as it's now in the main 'web' group.
 // --- /AuthBridge scaffolding ---
