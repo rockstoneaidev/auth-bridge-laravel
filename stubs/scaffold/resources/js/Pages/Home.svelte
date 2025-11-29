@@ -5,9 +5,11 @@
   import { router } from '@inertiajs/svelte';
 
   export let auth = { isAuthenticated: false, user: null };
+  export let app = { name: 'Laravel App', key: null, client_id: null };
 
   const authPortalUrl = (import.meta.env.VITE_AUTH_BRIDGE_BASE_URL ?? 'http://localhost:8081').replace(/\/$/, '');
-  const registerUrl = `${authPortalUrl}/register`;
+  const appKeyParam = app.key ? `?app_key=${app.key}` : '';
+  const registerUrl = `${authPortalUrl}/register${appKeyParam}`;
 
   const goToDashboard = () => router.visit('/dashboard');
   const logout = () => router.post('/logout');

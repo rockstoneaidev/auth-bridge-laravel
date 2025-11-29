@@ -33,6 +33,8 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'app' => [
                 'name' => config('app.name', 'Laravel App'),
+                'key' => config('auth-bridge.app_key'),
+                'client_id' => config('auth-bridge.oauth.client_id'),
             ],
             'auth' => [
                 'isAuthenticated' => $user !== null,
