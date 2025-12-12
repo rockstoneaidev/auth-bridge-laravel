@@ -9,11 +9,16 @@ use AuthBridge\Laravel\Console\CheckCommand;
 use AuthBridge\Laravel\Console\InstallCommand;
 use AuthBridge\Laravel\Console\OnboardCommand;
 use AuthBridge\Laravel\Console\ScaffoldCommand;
+use AuthBridge\Laravel\Contracts\AuthProviderInterface;
 use AuthBridge\Laravel\Guards\AuthBridgeGuard;
 use AuthBridge\Laravel\Http\AuthBridgeClient;
 use AuthBridge\Laravel\Http\Middleware\EnsureAuthBridgePermission;
 use AuthBridge\Laravel\Http\Middleware\EnsureAuthBridgeRole;
+use AuthBridge\Laravel\Providers\AuthApiProvider;
+use AuthBridge\Laravel\Providers\FirebaseProvider;
 use AuthBridge\Laravel\Support\AuthBridgeContext;
+use AuthBridge\Laravel\Support\Firebase\JwksCache;
+use AuthBridge\Laravel\Support\Firebase\TokenVerifier;
 use AuthBridge\Laravel\Support\UserSynchronizer;
 use Illuminate\Auth\EloquentUserProvider;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
@@ -46,13 +51,27 @@ class AuthBridgeServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/auth-bridge.php', 'auth-bridge');
 
+        // Register the selected authentication provider
+        $this->app->singleton(AuthProviderInterface::class, function (Container $app): AuthProviderInterface {
+            /** @var ConfigRepository $config */
+            $config = $app->make('config');
+            $provider = $config->get('auth-bridge.provider', 'firebase');
+
+            return match ($provider) {
+                'auth_api' => $this->createAuthApiProvider($app, $config),
+                'firebase' => $this->createFirebaseProvider($app, $config),
+                default => throw new InvalidArgumentException("Unknown auth provider: {$provider}"),
+            };
+        });
+
+        // Keep AuthBridgeClient binding for backward compatibility (used by commands)
         $this->app->singleton(AuthBridgeClient::class, function (Container $app): AuthBridgeClient {
             /** @var ConfigRepository $config */
             $config = $app->make('config');
 
             return new AuthBridgeClient(
-                baseUrl: rtrim((string) $config->get('auth-bridge.base_url'), '/'),
-                userEndpoint: '/' . ltrim((string) $config->get('auth-bridge.user_endpoint'), '/'),
+                baseUrl: rtrim((string) ($config->get('auth-bridge.auth_api.base_url') ?? $config->get('auth-bridge.base_url')), '/'),
+                userEndpoint: '/' . ltrim((string) ($config->get('auth-bridge.auth_api.user_endpoint') ?? $config->get('auth-bridge.user_endpoint')), '/'),
                 http: $app->make(HttpFactory::class),
                 httpConfig: $config->get('auth-bridge.http', []),
             );
@@ -134,7 +153,7 @@ class AuthBridgeServiceProvider extends ServiceProvider
             return new AuthBridgeGuard(
                 name: $name,
                 request: $app['request'],
-                client: $app->make(AuthBridgeClient::class),
+                provider: $app->make(AuthProviderInterface::class),
                 synchronizer: $synchronizer,
                 cache: $cache,
                 events: $events,
@@ -159,5 +178,43 @@ class AuthBridgeServiceProvider extends ServiceProvider
 
         $router->aliasMiddleware('auth-bridge.permission', EnsureAuthBridgePermission::class);
         $router->aliasMiddleware('auth-bridge.role', EnsureAuthBridgeRole::class);
+    }
+
+    /**
+     * Create Auth API provider instance.
+     */
+    private function createAuthApiProvider(Container $app, ConfigRepository $config): AuthApiProvider
+    {
+        return new AuthApiProvider($app->make(AuthBridgeClient::class));
+    }
+
+    /**
+     * Create Firebase provider instance.
+     */
+    private function createFirebaseProvider(Container $app, ConfigRepository $config): FirebaseProvider
+    {
+        $projectId = $config->get('auth-bridge.firebase.project_id');
+
+        if (! $projectId) {
+            throw new RuntimeException('FIREBASE_PROJECT_ID is required when using firebase provider');
+        }
+
+        $cacheStore = $config->get('auth-bridge.cache.store');
+        $cache = $app->make('cache')->store($cacheStore);
+
+        $jwksCache = new JwksCache(
+            jwksUrl: $config->get('auth-bridge.firebase.jwks_url'),
+            cache: $cache,
+            http: $app->make(HttpFactory::class),
+            cacheTtl: (int) $config->get('auth-bridge.firebase.jwks_cache_ttl', 3600),
+        );
+
+        $verifier = new TokenVerifier(
+            jwksCache: $jwksCache,
+            issuerPrefix: $config->get('auth-bridge.firebase.issuer_prefix'),
+            clockSkew: (int) $config->get('auth-bridge.firebase.clock_skew_seconds', 60),
+        );
+
+        return new FirebaseProvider($verifier, $projectId);
     }
 }

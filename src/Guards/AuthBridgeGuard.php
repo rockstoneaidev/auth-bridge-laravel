@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace AuthBridge\Laravel\Guards;
 
-use AuthBridge\Laravel\Http\AuthBridgeClient;
+use AuthBridge\Laravel\Contracts\AuthProviderInterface;
 use AuthBridge\Laravel\Support\UserSynchronizer;
 use Illuminate\Auth\Events\Authenticated;
 use Illuminate\Auth\Events\Failed;
@@ -16,10 +16,8 @@ use Illuminate\Contracts\Auth\Guard;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\Request;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
-use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 
 class AuthBridgeGuard implements Guard
 {
@@ -31,7 +29,7 @@ class AuthBridgeGuard implements Guard
     public function __construct(
         private readonly string $name,
         private Request $request,
-        private readonly AuthBridgeClient $client,
+        private readonly AuthProviderInterface $provider,
         private readonly UserSynchronizer $synchronizer,
         private readonly CacheRepository $cache,
         private readonly Dispatcher $events,
@@ -60,23 +58,15 @@ class AuthBridgeGuard implements Guard
             $payload = $this->cache->remember(
                 $cacheKey,
                 $ttl,
-                fn () => $this->fetchRemoteUser($token, $headers),
+                fn () => $this->provider->authenticate($token, $headers),
             );
         } else {
-            $payload = $this->fetchRemoteUser($token, $headers);
+            $payload = $this->provider->authenticate($token, $headers);
         }
 
-        $rawPayload = $payload;
-        $payload = Arr::get($rawPayload, 'data', $rawPayload);
-
         $context = [
-            'account_id' => Arr::get($rawPayload, 'context.account.id')
-                ?? Arr::get($payload, 'account.id')
-                ?? Arr::get($payload, 'accounts.0.id')
-                ?? $headers[$this->config['headers']['account'] ?? 'X-Account-ID'] ?? null,
-            'app_key' => Arr::get($rawPayload, 'app.key')
-                ?? Arr::get($payload, 'app.key')
-                ?? $headers[$this->config['headers']['app'] ?? 'X-App-Key'] ?? null,
+            'account_id' => $headers[$this->config['headers']['account'] ?? 'X-Account-ID'] ?? null,
+            'app_key' => $headers[$this->config['headers']['app'] ?? 'X-App-Key'] ?? null,
         ];
 
         $user = $this->synchronizer->sync($payload, $context);
@@ -124,18 +114,6 @@ class AuthBridgeGuard implements Guard
     }
 
     /**
-     * @param  array<string, string|null>  $headers
-     */
-    protected function fetchRemoteUser(string $token, array $headers): array
-    {
-        try {
-            return $this->client->fetchUser($token, $headers);
-        } catch (RequestException $exception) {
-            throw new UnauthorizedHttpException('Bearer', 'Auth API rejected the supplied token.', $exception);
-        }
-    }
-
-    /**
      * @return array<string, string|null>
      */
     protected function resolveContextHeaders(): array
@@ -151,6 +129,14 @@ class AuthBridgeGuard implements Guard
         ]);
     }
 
+    /**
+     * Generate cache key for authenticated user payload.
+     *
+     * Uses provider-specific prefix to prevent cache collisions between
+     * different authentication providers.
+     *
+     * @param  array<string, string|null>  $headers
+     */
     protected function cacheKey(string $token, array $headers = []): string
     {
         $headerString = collect($headers)
@@ -158,7 +144,9 @@ class AuthBridgeGuard implements Guard
             ->sort()
             ->implode(';');
 
-        return "auth-bridge:{$this->name}:" . sha1($token . '|' . $headerString);
+        $prefix = $this->provider->getCacheKeyPrefix();
+
+        return "auth-bridge:{$prefix}:".sha1($token.'|'.$headerString);
     }
 
     protected function getTokenForRequest(): ?string

@@ -3,6 +3,71 @@
 return [
     /*
     |--------------------------------------------------------------------------
+    | Authentication Provider
+    |--------------------------------------------------------------------------
+    |
+    | Determines which provider handles token verification and user context.
+    | Supported: 'auth_api', 'firebase'
+    |
+    | - auth_api: Centralized Auth API with OAuth2 (legacy)
+    | - firebase: Firebase Authentication (default for new apps)
+    |
+    */
+
+    'provider' => env('AUTH_BRIDGE_PROVIDER', 'firebase'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Auth API Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Settings for the centralized Auth API provider (when provider=auth_api).
+    |
+    */
+
+    'auth_api' => [
+        'base_url' => env('AUTH_BRIDGE_BASE_URL'),
+        'public_url' => env('AUTH_BRIDGE_PUBLIC_URL', env('AUTH_BRIDGE_BASE_URL')),
+        'user_endpoint' => env('AUTH_BRIDGE_USER_ENDPOINT', '/user'),
+        'internal_bootstrap_path' => env('AUTH_BRIDGE_BOOTSTRAP_PATH', '/internal/apps/bootstrap'),
+        'app_lookup_path' => env('AUTH_BRIDGE_APP_LOOKUP_PATH', '/apps'),
+        'default_redirect_suffix' => env('AUTH_BRIDGE_DEFAULT_REDIRECT_SUFFIX', '/oauth/callback'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Firebase Authentication Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Settings for Firebase provider (when provider=firebase).
+    |
+    | IMPORTANT: Use one Firebase project per app per environment.
+    | Example: docs-staging, docs-prod (NOT shared across apps)
+    |
+    */
+
+    'firebase' => [
+        // Firebase project ID (e.g., myapp-staging, myapp-prod)
+        'project_id' => env('FIREBASE_PROJECT_ID'),
+
+        // Google's JWKS endpoint for Firebase public keys
+        'jwks_url' => env(
+            'FIREBASE_JWKS_URL',
+            'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'
+        ),
+
+        // Expected token issuer prefix
+        'issuer_prefix' => env('FIREBASE_ISSUER_PREFIX', 'https://securetoken.google.com/'),
+
+        // Cache duration for JWKS public keys (seconds)
+        'jwks_cache_ttl' => (int) env('FIREBASE_JWKS_CACHE_TTL', 3600),
+
+        // Clock skew tolerance for exp/iat validation (seconds)
+        'clock_skew_seconds' => (int) env('FIREBASE_CLOCK_SKEW', 60),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Credentials
     |--------------------------------------------------------------------------
     |
@@ -32,11 +97,14 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Auth API Base URL (Server-to-Server)
+    | Auth API Base URL (Server-to-Server) - DEPRECATED
     |--------------------------------------------------------------------------
     |
     | This value is the base URL for the centralized Auth API used for
     | server-to-server communication. Should point to the versioned API root.
+    |
+    | DEPRECATED: Use 'auth_api.base_url' instead. This fallback is kept
+    | for backward compatibility with existing deployments.
     |
     | Examples:
     | - Docker internal: http://auth_api/api/v1
@@ -49,12 +117,14 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Auth API Public URL (Browser Redirects)
+    | Auth API Public URL (Browser Redirects) - DEPRECATED
     |--------------------------------------------------------------------------
     |
     | This URL is used for OAuth redirects that happen in the user's browser.
     | If not set, falls back to base_url. In many environments, the public URL
     | differs from the internal server-to-server URL.
+    |
+    | DEPRECATED: Use 'auth_api.public_url' instead.
     |
     | Examples:
     | - Docker: http://localhost:8001/api/v1 (where 8001 is the host port)
@@ -66,11 +136,13 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | User Endpoint
+    | User Endpoint - DEPRECATED
     |--------------------------------------------------------------------------
     |
     | Endpoint that returns the authenticated user context when invoked with
     | a Bearer token. By default, the guard will perform a GET request.
+    |
+    | DEPRECATED: Use 'auth_api.user_endpoint' instead.
     |
     */
 
@@ -78,11 +150,13 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Onboarding Defaults
+    | Onboarding Defaults - DEPRECATED
     |--------------------------------------------------------------------------
     |
     | Values consumed by the onboarding Artisan commands when scaffolding a
     | Laravel application to use the Auth Bridge.
+    |
+    | DEPRECATED: Use 'auth_api.internal_bootstrap_path', etc. instead.
     |
     */
 
