@@ -29,19 +29,23 @@ class JwksCache
      */
     public function getKeys(): array
     {
-        return $this->cache->remember(
+        // Cache the raw JWKS JSON, not the parsed OpenSSL keys (which can't be serialized)
+        $jwks = $this->cache->remember(
             'auth-bridge:firebase:jwks',
             $this->cacheTtl,
-            fn () => $this->fetchAndParseKeys()
+            fn () => $this->fetchJwks()
         );
+
+        // Parse keys on every request (can't cache OpenSSL key resources)
+        return JWK::parseKeySet($jwks);
     }
 
     /**
-     * Fetch JWKS from Google and parse into usable public keys.
+     * Fetch JWKS from Google.
      *
-     * @return array<string, resource|string>
+     * @return array<string, mixed>  Raw JWKS response
      */
-    private function fetchAndParseKeys(): array
+    private function fetchJwks(): array
     {
         $response = $this->http->get($this->jwksUrl);
 
@@ -55,7 +59,6 @@ class JwksCache
             throw new RuntimeException('Invalid JWKS response format');
         }
 
-        // Use firebase/php-jwt's JWK parser to convert JWKS to public keys
-        return JWK::parseKeySet($jwks);
+        return $jwks;
     }
 }
