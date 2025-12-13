@@ -33,6 +33,7 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use RuntimeException;
 
 class AuthBridgeServiceProvider extends ServiceProvider
 {
