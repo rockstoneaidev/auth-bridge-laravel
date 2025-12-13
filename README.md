@@ -1,12 +1,14 @@
 # Auth Bridge for Laravel
 
-`rockstoneaidev/auth-bridge-laravel` is a reusable bridge package for Laravel applications that authenticate and authorize via the centralized [Auth API service](https://github.com/rockstoneaidev/auth-api). It keeps a lightweight local user record in sync with the external identity provider while delegating all token handling, roles, and permissions to the Auth API.
+`rockstoneaidev/auth-bridge-laravel` is a reusable bridge package for Laravel applications that authenticate and authorize via **Firebase Authentication** (recommended) or the centralized [Auth API service](https://github.com/rockstoneaidev/auth-api) (legacy).
+
+It keeps a lightweight local user record in sync with the external identity provider while delegating all token handling, roles, and permissions to the configured provider.
 
 ## Requirements
 
 - PHP 8.4+
 - Laravel 12.x
-- Central Auth API v1 (Passport-based)
+- Firebase Project (for Firebase provider) OR Central Auth API v1 (for Auth API provider)
 
 ## Installation
 
@@ -22,7 +24,43 @@ php artisan vendor:publish --tag=auth-bridge-migrations
 php artisan migrate
 ```
 
-Publishing the migration adds the shared `external_*` columns (and `avatar_url` / `last_seen_at`) to your app's `users` table. These columns serve as the local cache of Auth API state (remote user UUID, active account, roles/permissions payloads, etc.), while also relaxing the default `name` / `email` columns to be nullable for SSO flows.
+Publishing the migration adds the shared `external_*` columns (and `avatar_url` / `last_seen_at`) to your app's `users` table. These columns serve as the local cache of the remote identity (Firebase UID or Auth API UUID).
+
+## Configuration
+
+### 1. Select Provider
+
+Update `.env` to select your authentication provider:
+
+```env
+# Options: firebase (default/recommended) | auth_api (legacy)
+AUTH_BRIDGE_PROVIDER=firebase
+```
+
+### 2. Configure Provider
+
+#### Option A: Firebase (Default)
+
+Configure your Firebase project details. Use a separate Firebase project for each environment (e.g., `myapp-staging`, `myapp-prod`).
+
+```env
+FIREBASE_PROJECT_ID=my-app-staging
+# Optional: Override defaults
+# FIREBASE_JWKS_URL=...
+# FIREBASE_ISSUER_PREFIX=...
+```
+
+The bridge verifies Firebase ID tokens (JWT) using Google's public keys and maps claims to your local `users` table.
+
+#### Option B: Auth API (Legacy)
+
+For apps using the existing centralized Auth API infrastructure:
+
+```env
+AUTH_BRIDGE_PROVIDER=auth_api
+AUTH_BRIDGE_BASE_URL=https://auth.example.com/api/v1
+AUTH_BRIDGE_PUBLIC_URL=https://auth.example.com
+```
 
 ## Configure the Guard
 
@@ -34,12 +72,11 @@ Update `config/auth.php` with a bridge guard that uses your existing `users` pro
         'driver' => 'auth-bridge',
         'provider' => 'users',
         'cache_ttl' => 30,        // seconds (set 0 to disable caching)
-        'cache_store' => null,    // defaults to the app cache store
     ],
 ],
 ```
 
-Point any API routes that rely on the centralized tokens to this guard:
+Point any API routes that rely on remote tokens to this guard:
 
 ```php
 Route::middleware(['auth:api'])->group(function () {
@@ -49,14 +86,14 @@ Route::middleware(['auth:api'])->group(function () {
 
 The guard automatically:
 
-1. Extracts the Bearer token (or `api_token` input/cookie fallback).
-2. Calls the Auth API `/user` endpoint with forwarded `X-Account-ID`/`X-App-Key` headers.
-3. Synchronizes the response to your `users` table.
-4. Injects the hydrated local user into the request (`request()->user()`).
+1. Extracts the Bearer token.
+2. Authenticates via the configured provider (Firebase or Auth API).
+3. Synchronizes the identity to your local `users` table.
+4. Injects the hydrated local user into the request (`request()->user()`)
 
 ## User Model Setup
 
-Add the provided trait to your `App\Models\User` so the JSON/Date casts are registered:
+Add the provided trait to your `App\Models\User`:
 
 ```php
 use AuthBridge\Laravel\Concerns\HasAuthBridgeUser;
@@ -67,184 +104,39 @@ class User extends Authenticatable
 }
 ```
 
-The bridge writes to the following columns (created by the published migration):
+## Onboarding a New App
 
-| Column            | Purpose |
-| ----------------- | ------- |
-| `external_user_id` | Remote user UUID (unique) |
-| `avatar_url`      | Remote profile image URL (if provided) |
-| `external_account_id` | Currently scoped account UUID |
-| `external_accounts` | JSON accounts array from Auth API |
-| `external_apps` | JSON apps array for conveniences |
-| `external_status` | Remote user status enum |
-| `external_payload` | Raw payload from `/user` endpoint (for debugging/caching) |
-| `external_synced_at` | Timestamp of last sync |
-| `last_seen_at` | Last activity timestamp reported by Auth API (nullable) |
+### With Firebase (Recommended)
 
-Passwords are not used locally—the synchronizer stores a random hash on first sync so legacy features that require a `password` column continue to work without accepting credentials.
+1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com).
+2. Enable Authentication (Email/Password, Google, etc.).
+3. Set `AUTH_BRIDGE_PROVIDER=firebase` and `FIREBASE_PROJECT_ID=...` in `.env`.
+4. Use the Firebase JS SDK in your frontend to obtain an ID token.
+5. Send the token as `Authorization: Bearer <token>` to your Laravel API.
 
-## Accessing Remote Context
+### With Auth API (Legacy)
 
-Use the facade or injected `AuthBridgeContext` service to read the raw payload, enforce app-scoped roles, or permissions:
-
-```php
-use AuthBridge\Laravel\Facades\AuthBridge;
-
-if (AuthBridge::hasPermission('documents.write')) {
-    // user has permission within the current (account × app) scope
-}
-```
-
-The service provider also registers two middleware aliases for quick policy checks:
-
-| Middleware | Usage |
-| ---------- | ----- |
-| `auth-bridge.permission:<permission>[,<accountId>[,<appKey>]]` | Ensure the incoming request has the specified permission. Values `current`/`context` fall back to headers/payload. |
-| `auth-bridge.role:<role>[,<accountId>[,<appKey>]]` | Ensure the user holds the given role. |
-
-Example:
-
-```php
-Route::post('/accounts/{account}/reports', ReportController::class)
-    ->middleware('auth-bridge.permission:reports.manage,route:account,current');
-```
-
-## Environment Variables
-
-Override defaults via `.env` as needed:
-
-```
-AUTH_BRIDGE_BASE_URL=https://auth.example.com/api/v1
-AUTH_BRIDGE_USER_ENDPOINT=/user
-AUTH_BRIDGE_HTTP_TIMEOUT=5
-AUTH_BRIDGE_HTTP_CONNECT_TIMEOUT=2
-AUTH_BRIDGE_CACHE_TTL=30
-AUTH_BRIDGE_CACHE_STORE=
-AUTH_BRIDGE_ACCOUNT_HEADER=X-Account-ID
-AUTH_BRIDGE_APP_HEADER=X-App-Key
-AUTH_BRIDGE_BOOTSTRAP_PATH=/internal/apps/bootstrap
-AUTH_BRIDGE_DEFAULT_REDIRECT_SUFFIX=/oauth/callback
-# AUTH_BRIDGE_INPUT_KEY=api_token
-# AUTH_BRIDGE_STORAGE_KEY=api_token
-# AUTH_BRIDGE_CHECK_TOKEN=
-# APP_KEY_SLUG=myapp
-# AUTH_BRIDGE_EXTERNAL_ID_COLUMN=external_user_id
-# AUTH_BRIDGE_ACCOUNT_ID_COLUMN=external_account_id
-# AUTH_BRIDGE_ACCOUNT_IDS_COLUMN=external_accounts
-# AUTH_BRIDGE_APP_IDS_COLUMN=external_apps
-# AUTH_BRIDGE_STATUS_COLUMN=external_status
-# AUTH_BRIDGE_PAYLOAD_COLUMN=external_payload
-# AUTH_BRIDGE_SYNCED_AT_COLUMN=external_synced_at
-# AUTH_BRIDGE_AVATAR_COLUMN=avatar_url
-# AUTH_BRIDGE_LAST_SEEN_COLUMN=last_seen_at
-```
-
-## Onboarding a New Laravel App
-
-Starting with this release, the package ships an opinionated onboarding flow that turns a fresh Laravel app into an Auth Bridge-ready app with a single Artisan command.
-
-### Quick start: `auth-bridge:onboard`
+Run the onboarding command to register your app and scaffold the OAuth client:
 
 ```bash
 php artisan auth-bridge:onboard \
   --app-key=docs \
   --app-name="Docs" \
-  --redirect=${APP_URL:-http://localhost:8000}/oauth/callback \
-  --bootstrap-token=${AUTH_API_BOOTSTRAP_TOKEN} \
-  --accounts=1234-uuid-here
+  --redirect=${APP_URL}/oauth/callback \
+  --bootstrap-token=${AUTH_API_BOOTSTRAP_TOKEN}
 ```
 
-What the command does:
+## Accessing Remote Context
 
-1. Publishes the bridge config/migrations (idempotent) and runs `php artisan migrate`.
-2. Calls the Auth API internal bootstrap endpoint to create/link the OAuth client + application row (when `--bootstrap-token` is provided).
-3. Writes/updates the required `.env` keys (`APP_KEY_SLUG`, `AUTH_BRIDGE_*`, `OAUTH_CLIENT_*`).
-4. Scaffolds the OAuth controller, middleware, routes, and the matching Inertia/Svelte pages/components that power the default login/logout experience.
-5. Executes `auth-bridge:check` to hit `/health` and, if a token is supplied, `/user`.
-6. Flags the installation as complete by setting `AUTH_BRIDGE_ONBOARDED=true` (used by the onboarding middleware guard) and removes onboarding-only artifacts (`install.sh`, wizard pages, etc.) so the app starts clean.
+Use the facade or injected `AuthBridgeContext` service to read the raw payload or check permissions:
 
-`--dry` prints the plan without touching disk or calling remote services. Supply `--client-id/--client-secret` to skip the Auth API bootstrap step.
+```php
+use AuthBridge\Laravel\Facades\AuthBridge;
 
-### Common flows
-
-| Scenario | Command |
-| --- | --- |
-| Local dev bootstrap (create client + scaffold) | `php artisan auth-bridge:onboard --app-key=docs --app-name="Docs" --auth-base=https://auth.example.com/api/v1 --bootstrap-token=$ADMIN_TOKEN --accounts=123` |
-| CI/CD first deploy | `php artisan auth-bridge:onboard --app-key=docs --app-name="Docs" --redirect=https://docs.example.com/oauth/callback --bootstrap-token=$AUTH_API_BOOTSTRAP_TOKEN --accounts=123` |
-| Already have OAuth client | `php artisan auth-bridge:onboard --app-key=docs --client-id=abc --client-secret=shhh --redirect=https://docs.example.com/oauth/callback` |
-| Preview only | `php artisan auth-bridge:onboard --app-key=docs --dry` |
-
-### Supporting commands
-
-| Command | Purpose |
-| --- | --- |
-| `auth-bridge:install` | Publish config + migrations and run `migrate`. Safe to re-run. |
-| `auth-bridge:bootstrap-app` | Direct call to `AUTH_BRIDGE_BOOTSTRAP_PATH` to create/link the OAuth client; prints the returned client id/secret. |
-| `auth-bridge:scaffold` | Generates/updates the OAuth controller, middleware, routes, and Inertia/Svelte UI. Pass `--force` to overwrite local edits. |
-| `auth-bridge:check` | Hits `/health` and (optionally) `/user` using `--token` or `AUTH_BRIDGE_CHECK_TOKEN`. |
-
-## Authorization Code contract
-
-Every downstream Laravel app authenticates exclusively through the Auth API (email/password, Google, MFA). The scaffolding produced by `auth-bridge:onboard` hard-codes this contract:
-
-- `AUTH_BRIDGE_BASE_URL` points to the internal API root (often `http://auth_api/api/v1`) and is used for `/api/v1/*` calls.
-- `AUTH_BRIDGE_PUBLIC_URL` points to the Auth API host without `/api` (e.g. `http://localhost:8081`) and is used for `/oauth/*` browser redirects.
-- `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` reference the Passport client that belongs to the app.
-- `VITE_AUTH_BRIDGE_BASE_URL` should mirror `AUTH_BRIDGE_PUBLIC_URL` so the Svelte UI can link to the Auth Portal (e.g. the “Register” CTA on the homepage/login page).
-
-### Generated routes
-
+if (AuthBridge::hasPermission('documents.write')) {
+    // user has permission
+}
 ```
-GET  /                 → Home (Inertia)
-GET  /login            → Auth/Login (explains redirect-only flow)
-GET  /oauth/redirect   → starts Authorization Code flow (state cookie)
-GET  /oauth/callback   → exchanges code for tokens and stores them in the session/api_token cookie
-POST /logout           → revokes token (optional) + clears cookie/session
-```
-
-Protected routes should apply `['inject-auth-ctx', 'auth:auth-bridge']` so the request headers contain `X-App-Key` / `X-Account-ID` before the guard calls the Auth API `/user` endpoint. The package keeps `/onboarding` available until `storage/bootstrap/onboarding.json` exists, ensuring first-run onboarding happens before any login attempt.
-
-### Frontend behavior
-
-- `/login` renders a simple Inertia/Svelte view with a single “Continue to Auth Portal” button. No password fields live in the downstream apps.
-- The homepage shows “Login” (links to `/login`) and “Register” (links to `${VITE_AUTH_BRIDGE_BASE_URL}/register`) once onboarding is complete.
-- After the Auth API redirects back to `/oauth/callback`, the controller writes the bearer token to the `api_token` cookie so the `auth-bridge` guard can call `/api/v1/user` on subsequent requests.
-
-### Manual fallback / customization
-
-Prefer the commands, but if you cannot hit the internal bootstrap endpoint from your environment, complete these steps manually:
-
-1. Create an OAuth client in the Auth API (Passport) with your callbacks.
-2. Link it to an `applications` row (`key = APP_KEY_SLUG`) and enable the relevant accounts.
-3. Install the bridge (`composer require`, publish config/migrations, migrate) and configure the `auth-bridge` guard.
-4. Set the `.env` keys (`AUTH_BRIDGE_*`, `OAUTH_CLIENT_*`, `APP_KEY_SLUG`, `APP_URL`).
-5. Implement/adjust the Authorization Code controller, callback, logout actions, and Inertia pages if you decide to skip the scaffolding step. The package stubs handle this out of the box and can be re-run later to pick up updates. Store the issued token where `AUTH_BRIDGE_INPUT_KEY`/`AUTH_BRIDGE_STORAGE_KEY` expect it (`api_token` by default).
-6. Ensure the `inject-auth-ctx` middleware (or equivalent) attaches the current account/app context headers before `auth:api` (or `auth:auth-bridge`) runs.
-7. (Optional) add refresh token handling and create Account API keys for server-to-server use cases.
-
-Guardrails/best practices:
-
-- Protect the Auth API `/internal/apps/bootstrap` endpoint behind admin roles + network allow lists.
-- Avoid echoing client secrets in CI logs; the command only writes them to `.env` unless you print Artisan output.
-- Run with `--dry` in pull requests to show intent without mutating files.
-- Because scaffolding is additive and idempotent, it is safe to re-run after editing routes/controller, but keep customizations separate or use `--force` selectively.
-- To rerun onboarding from scratch, delete `storage/bootstrap/onboarding.json` **and** remove or set `AUTH_BRIDGE_ONBOARDED=false` in `.env` before refreshing `/onboarding`.
-
-## Why a Local `users` Table?
-
-Each downstream app still needs a `users` table because:
-
-- Relationships (orders, comments, etc.) expect a local `users.id` FK.
-- You can join against local users without additional API calls.
-- Additional per-app profile data can live alongside the shared Auth API snapshot.
-
-The bridge migration + synchronizer keep that table aligned with the master Auth API record, so your apps remain thin while still benefiting from first-class Eloquent relations.
-
-## Advanced Notes
-
-- Remote payload caching defaults to 30 seconds; set `cache_ttl` to `0` to disable.
-- All network errors bubble up as `401 Unauthorized`.
-- The package assumes the Auth API returns a JSON response compatible with the project PRD. Adjust the `UserSynchronizer` if your payload deviates.
 
 ## Contributing
 

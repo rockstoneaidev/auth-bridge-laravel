@@ -10,9 +10,14 @@
 - AI developer agents (see [AI Collaboration Playbook](../ai/AGENTS.md))
 
 **Summary:**  
-Auth Bridge Laravel is a reusable Laravel package that connects any Laravel + Inertia + Svelte app to a central authorization API (**auth-api**). It handles all authentication, registration, 2FA, and user context, so new apps can be launched instantly without custom auth logic. The package syncs a minimal local user record, delegates all token/role/permission logic to the central API, and ships with a ready-made UI (login, registration, etc.) scaffolded into the app.
+Auth Bridge Laravel is a reusable Laravel package that handles authentication and user context for Laravel + Inertia + Svelte apps. It supports two strategies:
 
-The laravel-app-template is at ../laravel-app-template/ and the auth-api is at ../auth-api/ so you can see the code there. From the laravel-app-template and it's install.sh script together with this auth-bridge-laravel package I've created the RefinePress app at ../refinepress/.
+1.  **Firebase Authentication** (Default/Recommended): Modern, stateless JWT authentication where each app (per environment) has its own Firebase project.
+2.  **Auth API** (Legacy): Centralized OAuth2/Passport authentication connecting to the **auth-api** service.
+
+The package standardizes the interface for "logging in", syncing a minimal local user record, and managing roles/permissions, regardless of the underlying provider.
+
+The laravel-app-template is at ../laravel-app-template/ and the auth-api is at ../auth-api/. From the laravel-app-template and its install.sh script together with this auth-bridge-laravel package, we created the RefinePress app at ../refinepress/.
 
 ---
 
@@ -20,17 +25,17 @@ The laravel-app-template is at ../laravel-app-template/ and the auth-api is at .
 
 **Business Goals:**
 - Enable rapid launch of new Laravel + Inertia + Svelte apps with zero custom authentication code.
-- Centralize user management, roles, and permissions for all apps in the ecosystem.
+- Support modern, standard authentication (Firebase) while maintaining support for legacy centralized auth.
 - Reduce onboarding time for new projects to under 10 minutes.
 
 **User Goals:**
-- Developers can create a new app from the template and have working auth (login, registration, 2FA, etc.) out of the box.
-- End users experience seamless SSO and consistent UX across all apps.
+- Developers can create a new app and choose their auth provider (Firebase or Auth API) via configuration.
+- End users experience seamless authentication with modern security standards (MFA, etc.).
 
 **Success Metrics / KPIs:**
 - Time to first authenticated request in a new app < 10 minutes.
-- Number of apps using the bridge package.
-- Zero duplicated auth logic in downstream apps.
+- Successful adoption of Firebase provider for new apps.
+- Zero regression for existing apps using Auth API.
 
 ---
 
@@ -38,53 +43,56 @@ The laravel-app-template is at ../laravel-app-template/ and the auth-api is at .
 
 **In Scope:**
 - Laravel package (`auth-bridge-laravel`) that:
-    - Connects to a central auth-api (OAuth2/Passport-based).
+    - **Firebase Provider:** Verifies Firebase ID tokens (JWT), handles JWKS caching, and maps claims to user context.
+    - **Auth API Provider:** Connects to central auth-api (OAuth2) and handles token validation/refresh.
     - Publishes migrations to sync local users table.
-    - Scaffolds Inertia + Svelte UI for login, registration, 2FA, etc.
-    - Handles token validation, user hydration, and role/permission checks via the API.
-    - Provides install scripts and onboarding commands.
+    - Scaffolds Inertia + Svelte UI for login (customizable).
+    - Internalizes User creation/sync logic.
 - Integration with [laravel-app-template](https://github.com/rockstoneaidev/laravel-app-template) for rapid app creation.
 - Documentation for AI agents and human developers (see [AI Collaboration Playbook](../ai/AGENTS.md)).
 
 **Out of Scope:**
 - The central auth-api itself (see [auth-api repo](https://github.com/rockstoneaidev/auth-api)).
+- Hosting Firebase (managed by Google).
 - Custom business logic for downstream apps.
-- UI customization beyond the scaffolded defaults (apps can override after install).
 
 ---
 
 ## 4. Core Architecture Layer
 
-| Framework      | Language | Strategy                    | Database      | Queue / Jobs | Frontend         | Observability      | Deployment           |
-|----------------|----------|-----------------------------|---------------|--------------|------------------|--------------------|----------------------|
-| Laravel 12.x   | PHP 8.4+ | Auth Bridge + Passport API  | MySQL (local) | Optional     | Inertia + Svelte | Laravel logs, Sentry| Composer/NPM, Docker |
+| Framework      | Language | Strategy                                | Database      | Queue / Jobs | Frontend         | Observability      | Deployment           |
+|----------------|----------|-----------------------------------------|---------------|--------------|------------------|--------------------|----------------------|
+| Laravel 12.x   | PHP 8.4+ | Firebase (JWT) or Auth API (Passport)   | MySQL (local) | Optional     | Inertia + Svelte | Laravel logs, Sentry| Composer/NPM, Docker |
 
 **Key Components:**
-- **auth-api**: Central OAuth2/Passport server, user/role management.
-- **auth-bridge-laravel**: Bridge package, installed in every app.
-- **laravel-app-template**: GitHub template repo, includes install scripts and bridge package.
-- **Inertia + Svelte UI**: Provided by the bridge, customizable per app.
+- **Firebase Authentication**: Default provider, handles identity and MFA.
+- **auth-api**: Legacy central authority.
+- **auth-bridge-laravel**: Abstraction layer implementing `AuthProviderInterface`.
+- **laravel-app-template**: Starter kit using this bridge.
 
 ---
 
 ## 5. Functional Requirements
 
+- **Authentication Providers:**
+    - **Firebase (Default):**
+        - Configured via `AUTH_BRIDGE_PROVIDER=firebase`.
+        - Verifies RS256 JWTs from Firebase.
+        - Validates `iss`, `aud` (Project ID), `exp`, `sub`.
+        - Caches Google's JWKS public keys.
+    - **Auth API (Legacy):**
+        - Configured via `AUTH_BRIDGE_PROVIDER=auth_api`.
+        - Uses centralized OAuth2 flow.
+        - Delegates token validation to Auth API User endpoint.
+
+- **User Synchronization:**
+    - JIT (Just-In-Time) provisioning of users into local MySQL `users` table upon successful auth.
+    - Syncs `external_user_id` (Firebase UID or Auth API UUID).
+    - Maps profile data (email, name, avatar).
+
 - **Install/Onboard Flow:**
-    - `install.sh` script in template runs:
-        - Laravel install
-        - Inertia + Svelte install
-        - `composer require rockstoneaidev/auth-bridge-laravel`
-        - `php artisan auth-bridge:onboard ...` (registers app, sets up .env, publishes UI)
-    - See [docs/setup/auth-bridge.md](./setup/auth-bridge.md) for details.
-
-- **User Authentication:**
-    - All login, registration, 2FA, and password reset flows handled via bridge package.
-    - UI scaffolded into `resources/js/Pages/Auth/` and `resources/js/components/ui/`.
-    - Local user table kept in sync for Eloquent relationships.
-
-- **Token & Role Management:**
-    - All token validation, refresh, and role/permission checks delegated to central API.
-    - Local app never stores or manages passwords/tokens directly.
+    - `install.sh` in template supports provider selection.
+    - `auth-bridge:onboard` command handles setup.
 
 - **AI Agent Awareness:**
     - All conventions, scripts, and integration points are documented in [ai/AGENTS.md](../ai/AGENTS.md).
@@ -96,11 +104,11 @@ The laravel-app-template is at ../laravel-app-template/ and the auth-api is at .
 
 **For a new app:**
 1. Create from [laravel-app-template](https://github.com/rockstoneaidev/laravel-app-template).
-2. Run `install.sh` (or manual steps as in [docs/setup/auth-bridge.md](./setup/auth-bridge.md)).
-3. App is ready with full auth, user context, and UI.
-4. Customize UI as needed after initial scaffold.
+2. Run `install.sh` and select **Firebase**.
+3. Configure `FIREBASE_PROJECT_ID` in `.env`.
+4. App is ready.
 
-**For the central API:**  
+**For legacy apps (Auth API):**
 See [auth-api/README.md](https://github.com/rockstoneaidev/auth-api/blob/main/README.md) and [docs/setup/testing-apps.md](https://github.com/rockstoneaidev/auth-api/blob/main/docs/setup/testing-apps.md) for details on registering new apps and managing OAuth clients.
 
 ---
@@ -117,6 +125,5 @@ See [auth-api/README.md](https://github.com/rockstoneaidev/auth-api/blob/main/RE
 
 ## 8. Change Log
 
+- **2025-12-12:** Added Firebase Authentication as a supported provider.
 - **2025-11-09:** Major update to reflect real-world architecture and onboarding flow.
-
----
